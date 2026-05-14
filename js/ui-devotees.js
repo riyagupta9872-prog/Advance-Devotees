@@ -86,6 +86,7 @@ function renderDevoteeItem(d) {
         <div class="devotee-name">
           ${d.name}
           ${isBirthdayWeek(d.dob) ? '<i class="fas fa-birthday-cake birthday-icon" title="Birthday this week!"></i>' : ''}
+          ${isAnniversaryWeek(d.anniversary_date) ? '<i class="fas fa-heart anniversary-icon" title="Anniversary this week!"></i>' : ''}
         </div>
         <div class="devotee-meta">${d.mobile || '—'}</div>
         <div class="devotee-badges">${statusBadge(d.devotee_status)}${d.team_name ? ' ' + teamBadge(d.team_name) : ''}${d.reference_by ? `<span style="font-size:.7rem;color:var(--text-muted);margin-left:.3rem"><i class="fas fa-user-plus" style="font-size:.6rem"></i> ${d.reference_by}</span>` : ''}</div>
@@ -131,7 +132,7 @@ async function openProfileModal(id) {
         <div class="profile-hero">
           <div class="profile-avatar-lg">${initials(d.name)}</div>
           <div class="profile-hero-info">
-            <h2>${d.name}${isBirthdayWeek(d.dob) ? ' 🎂' : ''}</h2>
+            <h2>${d.name}${isBirthdayWeek(d.dob) ? ' 🎂' : ''}${isAnniversaryWeek(d.anniversary_date) ? ' 💍' : ''}</h2>
             <div class="profile-hero-meta">${d.team_name ? teamBadge(d.team_name) : ''} ${statusBadge(d.devotee_status)}${d.is_not_interested ? ' <span class="badge" style="background:#bf360c;color:#fff"><i class="fas fa-ban"></i> Not Interested</span>' : ''}</div>
             <div class="profile-hero-meta" style="margin-top:.4rem">${contactIcons(d.mobile, { altMobile: d.mobile_alt, devoteeId: d.id, name: d.name })}${d.mobile ? `<span style="font-size:.85rem;margin-left:.4rem">${d.mobile}</span>` : ''}${d.mobile_alt ? `<span style="font-size:.72rem;color:var(--text-muted);margin-left:.4rem">(Alt: ${d.mobile_alt})</span>` : ''}</div>
           </div>
@@ -152,6 +153,7 @@ async function openProfileModal(id) {
         <div class="profile-fields">
           <div class="profile-field full"><label>Residential Address</label><span>${d.address || '—'}</span></div>
           <div class="profile-field"><label>Date of Birth</label><span>${formatDate(d.dob)}${isBirthdayWeek(d.dob) ? ' 🎂' : ''}</span></div>
+          <div class="profile-field"><label>Date of Anniversary</label><span>${formatDate(d.anniversary_date)}${isAnniversaryWeek(d.anniversary_date) ? ' 💍' : ''}</span></div>
           <div class="profile-field"><label>Mobile (Primary)</label><span>${d.mobile || '—'}</span></div>
           <div class="profile-field"><label>Alternate Mobile</label><span>${d.mobile_alt || '—'}</span></div>
           <div class="profile-field"><label>Email</label><span>${d.email ? `<a href="mailto:${d.email}" style="color:var(--primary)">${d.email}</a>` : '—'}</span></div>
@@ -159,14 +161,15 @@ async function openProfileModal(id) {
         </div>
       </div>
 
-      <!-- Team panel -->
+      <!-- Department panel -->
       <div class="psec-panel" id="pvpanel-team">
         <div class="psec-panel-header psec-team">
-          <i class="fas fa-users"></i> Team Management
-          <span class="psec-note">Team assignment and connections</span>
+          <i class="fas fa-users"></i> Department Management
+          <span class="psec-note">Department assignment and connections</span>
         </div>
         <div class="profile-fields">
-          <div class="profile-field"><label>Team Name</label><span>${d.team_name ? teamBadge(d.team_name) : '—'}</span></div>
+          <div class="profile-field"><label>Department</label><span>${d.team_name ? teamBadge(d.team_name) : '—'}</span></div>
+          <div class="profile-field"><label>Team</label><span>${d.sub_team || '—'}</span></div>
           <div class="profile-field"><label>Devotee Status</label><span>${statusBadge(d.devotee_status)}</span></div>
           <div class="profile-field"><label>Date of Joining</label><span>${formatDate(d.date_of_joining)}</span></div>
           <div class="profile-field"><label>Reference By</label><span id="pv-ref-by">${d.reference_by || '—'}</span></div>
@@ -343,11 +346,13 @@ function openDevoteeFormModal(fromAttendance = false, editId = null) {
 function clearDevoteeForm() {
   ['f-name','f-mobile','f-mobile-alt','f-address','f-education','f-email','f-profession','f-hobbies','f-family-members','f-family-participants'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   document.getElementById('f-dob').value = '';
+  const fAnn = document.getElementById('f-anniversary'); if (fAnn) fAnn.value = '';
+  const fSubTeam = document.getElementById('f-sub-team'); if (fSubTeam) fSubTeam.value = '';
   document.getElementById('f-joining').value = getToday();
   document.getElementById('f-chanting').value = '0';
-  // New devotees default to team "Other" and status "New Devotee" — super admin
+  // New devotees default to no department; status "New Devotee" — super admin
   // can re-assign later from the Calling Mgmt → New Comers tab.
-  document.getElementById('f-team').value = 'Other';
+  document.getElementById('f-team').value = '';
   document.getElementById('f-status').value = 'New Devotee';
   document.getElementById('f-kanthi').value = '0';
   document.getElementById('f-gopi').value = '0';
@@ -380,6 +385,8 @@ async function populateEditForm(id) {
     const fMobileAlt = document.getElementById('f-mobile-alt'); if (fMobileAlt) fMobileAlt.value = d.mobile_alt || '';
     document.getElementById('f-address').value  = d.address || '';
     document.getElementById('f-dob').value      = d.dob || '';
+    const fAnnEdit = document.getElementById('f-anniversary'); if (fAnnEdit) fAnnEdit.value = d.anniversary_date || '';
+    const fSubTeamEdit = document.getElementById('f-sub-team'); if (fSubTeamEdit) fSubTeamEdit.value = d.sub_team || '';
     document.getElementById('f-joining').value  = d.date_of_joining || '';
     document.getElementById('f-chanting').value = d.chanting_rounds || 0;
     document.getElementById('f-team').value     = d.team_name || '';
@@ -430,6 +437,8 @@ function getFormPayload() {
     mobile_alt:        (document.getElementById('f-mobile-alt')?.value || '').replace(/\D/g,'').slice(0,10),
     address:           document.getElementById('f-address').value.trim(),
     dob:               document.getElementById('f-dob').value,
+    anniversary_date:  document.getElementById('f-anniversary')?.value || null,
+    sub_team:          document.getElementById('f-sub-team')?.value.trim() || null,
     date_of_joining:   document.getElementById('f-joining').value,
     chanting_rounds:   parseInt(document.getElementById('f-chanting').value) || 0,
     team_name:         document.getElementById('f-team').value,
@@ -485,7 +494,7 @@ async function saveDevotee(e) {
   if (payload.calling_by) {
     const teamUsers = await DB.getUsersForTeam(payload.team_name);
     if (!teamUsers.some(u => u.name === payload.calling_by)) {
-      showToast(`"${payload.calling_by}" has no system login in ${payload.team_name || 'this team'}. Assign a login first.`, 'error');
+      showToast(`"${payload.calling_by}" has no system login in ${payload.team_name || 'this department'}. Assign a login first.`, 'error');
       return;
     }
   }
@@ -582,7 +591,7 @@ async function openHistoryModal() {
   try {
     const history = await DB.getProfileHistory(AppState.currentDevoteeId);
     if (!history.length) { content.innerHTML = '<div class="empty-state" style="padding:2rem"><i class="fas fa-history"></i><p>No changes recorded yet</p></div>'; return; }
-    const labels = { name:'Name', mobile:'Mobile', chanting_rounds:'Chanting Rounds', kanthi:'Kanthi', gopi_dress:'Gopi Dress', team_name:'Team', devotee_status:'Status', facilitator:'Facilitator', reference_by:'Reference', calling_by:'Calling By' };
+    const labels = { name:'Name', mobile:'Mobile', chanting_rounds:'Chanting Rounds', kanthi:'Kanthi', gopi_dress:'Gopi Dress', team_name:'Department', sub_team:'Team', anniversary_date:'Anniversary', devotee_status:'Status', facilitator:'Facilitator', reference_by:'Reference', calling_by:'Calling By' };
     content.innerHTML = history.map(h => `
       <div class="history-item">
         <div class="history-field">${labels[h.field_name] || h.field_name}</div>

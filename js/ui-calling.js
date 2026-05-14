@@ -486,7 +486,7 @@ function renderCallingRow(d, i, locked) {
           <div class="devotee-avatar" style="width:28px;height:28px;font-size:.65rem;flex-shrink:0">${initials(d.name)}</div>
           <div>
             <span class="calling-name-link" onclick="openCallingHistory('${safeId}','${safeName}')">
-              ${d.name}${isBirthdayWeek(d.dob) ? ' <i class="fas fa-birthday-cake" style="color:var(--gold);font-size:.7rem"></i>' : ''}
+              ${d.name}${isBirthdayWeek(d.dob) ? ' <i class="fas fa-birthday-cake" style="color:var(--gold);font-size:.7rem"></i>' : ''}${isAnniversaryWeek(d.anniversary_date) ? ' <i class="fas fa-heart" style="color:#e91e63;font-size:.7rem"></i>' : ''}
             </span>
             ${contextLine}
           </div>
@@ -509,7 +509,7 @@ function renderCallingRow(d, i, locked) {
       <div style="display:flex;align-items:center;gap:.4rem">
         <div class="devotee-avatar" style="width:28px;height:28px;font-size:.65rem;flex-shrink:0">${initials(d.name)}</div>
         <span class="calling-name-link" onclick="openCallingHistory('${safeId}','${safeName}')">
-          ${d.name}${isBirthdayWeek(d.dob) ? ' <i class="fas fa-birthday-cake" style="color:var(--gold);font-size:.7rem"></i>' : ''}
+          ${d.name}${isBirthdayWeek(d.dob) ? ' <i class="fas fa-birthday-cake" style="color:var(--gold);font-size:.7rem"></i>' : ''}${isAnniversaryWeek(d.anniversary_date) ? ' <i class="fas fa-heart" style="color:#e91e63;font-size:.7rem"></i>' : ''}
         </span>
       </div>
     </td>

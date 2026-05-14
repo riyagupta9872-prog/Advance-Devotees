@@ -138,7 +138,7 @@ function _actRenderLog(key) {
         </div>` : ''}
       <div class="form-grid-2">
         <div class="form-group">
-          <label>Team <span class="req">*</span></label>
+          <label>Department <span class="req">*</span></label>
           <select id="${p}-team">${_actTeamOptions(team)}</select>
         </div>
         <div class="form-group">
@@ -329,7 +329,7 @@ async function _actLoadRecent(key) {
     }
     wrap.innerHTML = `
       <div class="table-scroll"><table class="report-table">
-        <thead><tr>${cfg.cols.map(c => `<th>${c.label}</th>`).join('')}<th>Team</th></tr></thead>
+        <thead><tr>${cfg.cols.map(c => `<th>${c.label}</th>`).join('')}<th>Department</th></tr></thead>
         <tbody>${list.map(e => `<tr>
           ${cfg.cols.map(c => `<td${c.align ? ` style="text-align:${c.align}"` : ''}>${_actFmt(e[c.key], c.format)}</td>`).join('')}
           <td><span class="team-badge-sm">${e.teamName || '—'}</span></td>
@@ -493,7 +493,7 @@ async function _actLoadReport(key) {
 
     body.innerHTML = `
       <div class="table-scroll"><table class="report-table">
-        <thead><tr><th>Team</th><th class="num-th">${cfg.sumLabel.replace('Total ','')}</th><th class="num-th">Entries</th></tr></thead>
+        <thead><tr><th>Department</th><th class="num-th">${cfg.sumLabel.replace('Total ','')}</th><th class="num-th">Entries</th></tr></thead>
         <tbody>${teams.map(t => `
           <tr class="team-row" onclick="this.nextElementSibling.classList.toggle('hidden')">
             <td><span class="team-badge-sm">${t}</span> <i class="fas fa-chevron-down" style="font-size:.65rem;color:var(--text-muted)"></i></td>

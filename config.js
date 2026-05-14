@@ -2,12 +2,12 @@
 
 // ── FIREBASE INIT ─────────────────────────────────────
 const firebaseConfig = {
-  apiKey: "AIzaSyCxxLIiOy0bGus2NkkSod7_LBVHah5-sz0",
-  authDomain: "sakhi-sang-attendence-tracker.firebaseapp.com",
-  projectId: "sakhi-sang-attendence-tracker",
-  storageBucket: "sakhi-sang-attendence-tracker.firebasestorage.app",
-  messagingSenderId: "975645795932",
-  appId: "1:975645795932:web:10123086717198940b2899"
+  apiKey: "AIzaSyAnDfwKv31hdzgJxHgQ4opHI_z_tHFR5es",
+  authDomain: "advance-devotees.firebaseapp.com",
+  projectId: "advance-devotees",
+  storageBucket: "advance-devotees.firebasestorage.app",
+  messagingSenderId: "974186447071",
+  appId: "1:974186447071:web:4c95705e0b8c9380d9696a"
 };
 firebase.initializeApp(firebaseConfig);
 const fdb = firebase.firestore();
@@ -15,9 +15,9 @@ const TS  = () => firebase.firestore.FieldValue.serverTimestamp();
 const INC = (n) => firebase.firestore.FieldValue.increment(n);
 fdb.enablePersistence({ synchronizeTabs: true }).catch(err => {
   if (err.code === 'failed-precondition') {
-    console.warn('[Sakhi Sang] Offline persistence disabled (multiple tabs open)');
+    console.warn('[Advance Devotees] Offline persistence disabled (multiple tabs open)');
   } else if (err.code === 'unimplemented') {
-    console.warn('[Sakhi Sang] Offline persistence not supported in this browser');
+    console.warn('[Advance Devotees] Offline persistence not supported in this browser');
   }
 });
 
@@ -28,13 +28,13 @@ function _isFirestoreAssertionError(msg) {
 }
 window.addEventListener('unhandledrejection', e => {
   if (_isFirestoreAssertionError(e.reason?.message)) {
-    console.warn('[Sakhi Sang] Firestore internal error — reloading to recover');
+    console.warn('[Advance Devotees] Firestore internal error — reloading to recover');
     setTimeout(() => location.reload(), 600);
   }
 });
 window.addEventListener('error', e => {
   if (_isFirestoreAssertionError(e.message)) {
-    console.warn('[Sakhi Sang] Firestore internal error — reloading to recover');
+    console.warn('[Advance Devotees] Firestore internal error — reloading to recover');
     setTimeout(() => location.reload(), 600);
   }
 });
@@ -161,8 +161,9 @@ function getFilterTeam()      { return AppState.filters?.team      || ''; }
 function getFilterCallingBy() { return AppState.filters?.callingBy || ''; }
 function getFilterSessionId() { return AppState.filters?.sessionId || null; }
 
-// ── TEAMS LIST (single source of truth) ───────────────
-const TEAMS = ['Champaklata','Chitralekha','Indulekha','Lalita','Nilachal','Other','Rangadevi','Sudevi','Tungavidya','Vishakha'];
+// ── DEPARTMENTS LIST (single source of truth) ─────────
+const TEAMS = ['IGF', 'IYF', 'ICF_Mtg', 'ICF_Prji'];  // values stored in teamName field
+const DEPARTMENTS = TEAMS;  // alias — use DEPARTMENTS in new code
 
 // ── ATTENDANCE TIME COLOUR ─────────────────────────────
 function attTimeStyle(markedAtISO) {
@@ -234,6 +235,15 @@ function isBirthdayWeek(dob) {
   for (let i = 0; i < 7; i++) {
     const d = new Date(now); d.setDate(now.getDate() + i);
     if (dob.slice(5) === `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`) return true;
+  }
+  return false;
+}
+function isAnniversaryWeek(date) {
+  if (!date) return false;
+  const now = new Date();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now); d.setDate(now.getDate() + i);
+    if (date.slice(5) === `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`) return true;
   }
   return false;
 }

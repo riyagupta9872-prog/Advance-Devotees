@@ -251,7 +251,7 @@ async function loadBookDistReport() {
     const teams = Object.keys(teamMap).sort();
     const grand = teams.reduce((s, t) => s + teamMap[t].total, 0);
     body.innerHTML = `<div class="table-scroll"><table class="report-table">
-      <thead><tr><th>Team</th><th class="num-th">Books</th></tr></thead>
+      <thead><tr><th>Department</th><th class="num-th">Books</th></tr></thead>
       <tbody>
         ${teams.map(t => `
           <tr class="team-row" onclick="this.nextElementSibling.classList.toggle('hidden')">
@@ -325,7 +325,7 @@ async function loadDonationReport() {
     const teams = Object.keys(teamMap).sort();
     const grand = teams.reduce((s, t) => s + teamMap[t], 0);
     body.innerHTML = `<div class="table-scroll"><table class="report-table">
-      <thead><tr><th>Team</th><th class="num-th">Amount (₹)</th></tr></thead>
+      <thead><tr><th>Department</th><th class="num-th">Amount (₹)</th></tr></thead>
       <tbody>
         ${teams.map(t => `<tr><td><span class="team-badge-sm">${t}</span></td><td class="num-cell">₹${teamMap[t].toLocaleString('en-IN')}</td></tr>`).join('')}
         <tr class="totals-row"><td><strong>TOTAL</strong></td><td class="num-cell"><strong>₹${grand.toLocaleString('en-IN')}</strong></td></tr>
@@ -395,7 +395,7 @@ async function loadRegistrationReport() {
     const teams = Object.keys(teamMap).sort();
     const grand = teams.reduce((s, t) => s + teamMap[t].total, 0);
     body.innerHTML = `<div class="table-scroll"><table class="report-table">
-      <thead><tr><th>Team</th><th class="num-th">Registrations</th></tr></thead>
+      <thead><tr><th>Department</th><th class="num-th">Registrations</th></tr></thead>
       <tbody>
         ${teams.map(t => `
           <tr class="team-row" onclick="this.nextElementSibling.classList.toggle('hidden')">
@@ -475,7 +475,7 @@ async function loadServiceReport() {
     const teams = Object.keys(teamMap).sort();
     const grand = teams.reduce((s, t) => s + teamMap[t].total, 0);
     body.innerHTML = `<div class="table-scroll"><table class="report-table">
-      <thead><tr><th>Team</th><th class="num-th">Services</th></tr></thead>
+      <thead><tr><th>Department</th><th class="num-th">Services</th></tr></thead>
       <tbody>
         ${teams.map(t => `
           <tr class="team-row" onclick="this.nextElementSibling.classList.toggle('hidden')">

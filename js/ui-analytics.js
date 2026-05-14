@@ -236,7 +236,7 @@ async function loadDashboard() {
         <table class="dashboard-table">
           <thead>
             <tr>
-              <th rowspan="2">Team</th>
+              <th rowspan="2">Department</th>
               <th colspan="5">Attendance</th>
               <th rowspan="2">Books</th>
               <th rowspan="2">Service</th>
@@ -412,8 +412,8 @@ function openActivityDetailModal(type, team) {
           <thead><tr>
             <th style="text-align:center;min-width:28px">#</th>
             ${isDonation
-              ? `<th>Team</th><th style="text-align:center">Amount</th><th>Note</th><th>Date</th>`
-              : `<th>Devotee</th><th>Team</th><th style="${type !== 'service' ? 'text-align:center' : ''}">${colLabel}</th>`}
+              ? `<th>Department</th><th style="text-align:center">Amount</th><th>Note</th><th>Date</th>`
+              : `<th>Devotee</th><th>Department</th><th style="${type !== 'service' ? 'text-align:center' : ''}">${colLabel}</th>`}
           </tr></thead>
           <tbody>
             ${bodyRows || '<tr><td colspan="4" style="text-align:center;padding:1.5rem;color:var(--text-muted)">No entries</td></tr>'}
@@ -546,7 +546,7 @@ async function loadNewComersReport() {
         <table class="report-table">
           <thead><tr>
             <th>#</th><th>Name</th><th>Source</th><th>Mobile</th><th>Reference</th>
-            <th>Team</th><th>Calling By</th><th style="text-align:center">C.R.</th>
+            <th>Department</th><th>Calling By</th><th style="text-align:center">C.R.</th>
           </tr></thead>
           <tbody>${list.map((d, i) => `<tr>
             <td style="color:var(--text-muted)">${i + 1}</td>
@@ -673,7 +673,7 @@ async function loadAttendanceDetail() {
       <div style="margin-bottom:.75rem;color:var(--text-muted);font-size:.85rem">${records.length} devotees present</div>
       <div class="table-scroll">
         <table class="report-table">
-          <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Rounds</th><th>Team</th><th>Calling By</th><th>Type</th></tr></thead>
+          <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Rounds</th><th>Department</th><th>Calling By</th><th>Type</th></tr></thead>
           <tbody>${records.map((r, i) => `
             <tr><td style="color:var(--text-muted)">${i+1}</td>
                 <td style="font-weight:600">${r.name}</td>
@@ -699,7 +699,7 @@ async function loadSeriousAnalysis() {
     const statuses = ['Most Serious','Serious','Expected to be Serious','New Devotee','Inactive'];
     c.innerHTML = `<div class="table-scroll"><table class="report-table">
       <thead>
-        <tr><th>Team</th>${statuses.map(s => `<th colspan="2" style="text-align:center">${shortStatus(s)}</th>`).join('')}</tr>
+        <tr><th>Department</th>${statuses.map(s => `<th colspan="2" style="text-align:center">${shortStatus(s)}</th>`).join('')}</tr>
         <tr><th></th>${statuses.map(() => '<th>Promised</th><th>Arrived</th>').join('')}</tr>
       </thead>
       <tbody>${teams.map(team => {
@@ -735,7 +735,7 @@ async function loadTeamLeaderboard() {
     ranked.sort((a, b) => b.pct - a.pct || b.actualPresent - a.actualPresent);
 
     c.innerHTML = `<div class="table-scroll"><table class="report-table leaderboard-table">
-      <thead><tr><th>Rank</th><th>Team</th><th>Total</th><th>Calling List</th><th>Target</th><th>Present</th><th>Achievement</th></tr></thead>
+      <thead><tr><th>Rank</th><th>Department</th><th>Total</th><th>Calling List</th><th>Target</th><th>Present</th><th>Achievement</th></tr></thead>
       <tbody>${ranked.map((row, i) => {
         const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`;
         const cls   = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'';
@@ -906,7 +906,7 @@ function openCareDetail(type) {
     <div class="table-scroll">
       <table class="report-table">
         <thead><tr>
-          <th>#</th><th>Name</th><th>Mobile</th><th>Reference</th><th>Team</th><th>Calling By</th><th style="text-align:center">C.R.</th>
+          <th>#</th><th>Name</th><th>Mobile</th><th>Reference</th><th>Department</th><th>Calling By</th><th style="text-align:center">C.R.</th>
         </tr></thead>
         <tbody>${list.map((d, i) => `<tr>
           <td style="color:var(--text-muted)">${i + 1}</td>
@@ -1283,7 +1283,7 @@ function _buildMgmtSeparateLists({ online, festival, notInterested }) {
         <i class="${icon}"></i> ${title} <span style="font-size:.8rem;font-weight:400;opacity:.85">(${items.length})</span>
       </div>
       <table class="calling-table sr-table" style="margin:0">
-        <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Team</th><th>Calling By</th><th>Restore</th></tr></thead>
+        <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Department</th><th>Calling By</th><th>Restore</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
@@ -2115,7 +2115,7 @@ async function openChangeCallingBy(devoteeId, devoteeName, team, currentCaller) 
     }
     sel.innerHTML = '<option value="">— Select caller —</option>' +
       users.map(u => {
-        const pos = u.position || (u.role === 'teamAdmin' ? 'Coordinator' : 'Facilitator');
+        const pos = u.position || (u.role === 'teamAdmin' ? 'Department Coordinator' : 'Facilitator');
         const selected = (u.name === currentCaller) ? ' selected' : '';
         return `<option value="${(u.name||'').replace(/"/g,'&quot;')}"${selected}>${u.name} (${pos})</option>`;
       }).join('');
@@ -2367,7 +2367,7 @@ function _renderCMSingleList(type) {
       <span style="font-size:.8rem;font-weight:400;opacity:.85"> (${items.length})</span>
     </div>
     <table class="calling-table sr-table" style="margin:0">
-      <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Team</th><th>Calling By</th><th>Actions</th></tr></thead>
+      <thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Department</th><th>Calling By</th><th>Actions</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>`;
@@ -2405,7 +2405,7 @@ async function _onBulkActionTypeChange() {
       const users = await DB.getUsersForTeam('');
       sel.innerHTML = '<option value="">— Select caller —</option>' +
         users.map(u => {
-          const pos = u.position || (u.role === 'teamAdmin' ? 'Coordinator' : 'Facilitator');
+          const pos = u.position || (u.role === 'teamAdmin' ? 'Department Coordinator' : 'Facilitator');
           const team = u.teamName ? ` · ${u.teamName}` : '';
           return `<option value="${(u.name||'').replace(/"/g,'&quot;')}">${u.name} (${pos}${team})</option>`;
         }).join('');

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sakhi Sang – Devotee Management</title>
+  <title>Advance Devotees – Department Management</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Nunito:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Sakhi Sang">
+  <meta name="apple-mobile-web-app-title" content="Advance Devotees">
   <meta name="theme-color" content="#1a5c3a">
 </head>
 <body>
@@ -22,9 +22,9 @@
 <div id="auth-screen" class="auth-screen">
   <div class="auth-card">
     <div class="auth-logo">
-      <img src="icon-192.png" class="auth-om" alt="Sakhi Sang" style="width:66px;height:66px;border-radius:50%;object-fit:cover;box-shadow:0 8px 24px rgba(26,92,58,.35),0 2px 8px rgba(0,0,0,.15);display:block;margin-bottom:.22rem">
-      <h2>Sakhi Sang</h2>
-      <p>Devotee Management System</p>
+      <img src="icon-192.png" class="auth-om" alt="Advance Devotees" style="width:66px;height:66px;border-radius:50%;object-fit:cover;box-shadow:0 8px 24px rgba(26,92,58,.35),0 2px 8px rgba(0,0,0,.15);display:block;margin-bottom:.22rem">
+      <h2>Advance Devotees</h2>
+      <p>Department Management System</p>
     </div>
     <div class="auth-tabs">
       <button class="auth-tab active" onclick="switchAuthTab('login', this)">Login</button>
@@ -77,16 +77,14 @@
         <label>Your Role</label>
         <select id="signup-role">
           <option value="serviceDevotee">Facilitator (Calling &amp; Attendance)</option>
-          <option value="teamAdmin">Team Admin (Team access)</option>
+          <option value="teamAdmin">Department Admin (Department access)</option>
         </select>
       </div>
       <div class="auth-field" id="signup-team-field">
-        <label>Your Team</label>
+        <label>Your Department</label>
         <select id="signup-team">
-          <option value="">Select Team</option>
-          <option>Champaklata</option><option>Chitralekha</option><option>Indulekha</option>
-          <option>Lalita</option><option>Nilachal</option><option>Other</option>
-          <option>Rangadevi</option><option>Sudevi</option><option>Tungavidya</option><option>Vishakha</option>
+          <option value="">Select Department</option>
+          <option>IGF</option><option>IYF</option><option>ICF_Mtg</option><option>ICF_Prji</option>
         </select>
       </div>
       <button type="submit" class="auth-btn"><i class="fas fa-user-plus"></i> Request Account</button>
@@ -137,6 +135,19 @@
   </div>
 </div>
 
+<!-- ══════════ ANNIVERSARY POPUP ══════════ -->
+<div id="anniversary-popup" class="modal-overlay hidden">
+  <div class="modal-box birthday-modal">
+    <div class="birthday-header">
+      <div class="birthday-icon-wrap" style="background:linear-gradient(135deg,#e91e63,#ff9800)"><i class="fas fa-heart"></i></div>
+      <h2>Anniversaries This Week 💍</h2>
+      <button class="btn-icon close" onclick="closeAnniversaryPopup()"><i class="fas fa-times"></i></button>
+    </div>
+    <div id="anniversary-list" class="birthday-list"></div>
+    <button class="btn btn-primary" style="width:100%;margin-top:1rem" onclick="closeAnniversaryPopup()">Hare Krishna! Close</button>
+  </div>
+</div>
+
 <!-- ══════════ TOAST ══════════ -->
 <div id="toast" class="toast hidden"></div>
 
@@ -148,10 +159,10 @@
       <span id="sidebar-badge" class="sidebar-badge hidden"></span>
     </button>
     <div class="header-logo">
-      <img src="icon-192.png" class="app-logo-img" alt="Sakhi Sang" style="width:42px;height:42px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1.5px solid rgba(255,255,255,.4);box-shadow:0 2px 8px rgba(0,0,0,.25);display:block">
+      <img src="icon-192.png" class="app-logo-img" alt="Advance Devotees" style="width:42px;height:42px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1.5px solid rgba(255,255,255,.4);box-shadow:0 2px 8px rgba(0,0,0,.25);display:block">
       <div class="header-text">
-        <h1>Sakhi Sang</h1>
-        <p>Devotee Management System</p>
+        <h1>Advance Devotees</h1>
+        <p>Department Management System</p>
       </div>
     </div>
     <div class="header-right">
@@ -236,7 +247,7 @@
       <i class="fas fa-handshake"></i> <span>Personal Meetings</span>
     </button>
     <button class="sidebar-item super-admin-only" onclick="openTeamRenameModal(); closeSidebar();">
-      <i class="fas fa-exchange-alt"></i> <span>Rename Team</span>
+      <i class="fas fa-exchange-alt"></i> <span>Rename Department</span>
     </button>
 
     <div class="sidebar-divider"></div>
@@ -369,11 +380,11 @@
       </div>
     </div>
 
-    <!-- Team chip -->
+    <!-- Department chip -->
     <div class="fr-chip-wrap">
       <div class="fr-chip" id="fr-chip-team" data-active="false" onclick="_frToggle(event,'team')">
         <i class="fas fa-users fr-chip-icon"></i>
-        <span class="fr-chip-label">Team</span>
+        <span class="fr-chip-label">Department</span>
         <span class="fr-chip-value" id="fr-team-value"></span>
         <span id="mfb-team-chip" class="fr-chip-locked" style="display:none"></span>
         <button class="fr-chip-clear" id="fr-team-clear" onclick="_frClearTeam(event)" title="Clear"><i class="fas fa-times"></i></button>
@@ -728,7 +739,7 @@
           <button class="sub-tab" onclick="switchSubTab(this,'late-comers'); loadLateComersReport()"><i class="fas fa-clock"></i> Late Comers</button>
           <button class="sub-tab" onclick="switchSubTab(this,'newcomers-report')"><i class="fas fa-user-plus"></i> New Comers</button>
           <button class="sub-tab" onclick="switchSubTab(this,'serious-analysis')"><i class="fas fa-star"></i> Serious</button>
-          <button class="sub-tab" onclick="switchSubTab(this,'team-leaderboard')"><i class="fas fa-trophy"></i> Teams</button>
+          <button class="sub-tab" onclick="switchSubTab(this,'team-leaderboard')"><i class="fas fa-trophy"></i> Departments</button>
           <button class="sub-tab" onclick="switchSubTab(this,'trends')"><i class="fas fa-chart-line"></i> Trends</button>
           <button class="sub-tab" onclick="switchSubTab(this,'att-accuracy'); loadAttAccuracyReport()"><i class="fas fa-bullseye"></i> Accuracy</button>
         </div>
@@ -918,7 +929,7 @@
         <i class="fas fa-user"></i><span>Identity</span>
       </button>
       <button class="psec-tab psec-team" onclick="switchProfileViewTab('team',this)">
-        <i class="fas fa-users"></i><span>Team</span>
+        <i class="fas fa-users"></i><span>Department</span>
       </button>
       <button class="psec-tab psec-professional" onclick="switchProfileViewTab('professional',this)">
         <i class="fas fa-briefcase"></i><span>Professional</span>
@@ -965,7 +976,7 @@
         <i class="fas fa-user"></i><span>Identity</span>
       </button>
       <button class="psec-tab psec-team" onclick="switchProfileTab('team',this)">
-        <i class="fas fa-users"></i><span>Team</span>
+        <i class="fas fa-users"></i><span>Department</span>
       </button>
       <button class="psec-tab psec-professional" onclick="switchProfileTab('professional',this)">
         <i class="fas fa-briefcase"></i><span>Professional</span>
@@ -995,6 +1006,10 @@
           <div class="form-group">
             <label>Date of Birth <span class="field-hint">(optional)</span></label>
             <input type="date" id="f-dob">
+          </div>
+          <div class="form-group">
+            <label>Date of Anniversary <span class="field-hint">(optional)</span></label>
+            <input type="date" id="f-anniversary">
           </div>
           <div class="form-group">
             <label>Mobile Number <span class="req">*</span></label>
@@ -1151,21 +1166,23 @@
         </div>
       </div>
 
-      <!-- ── Panel 5: Team Management ── -->
+      <!-- ── Panel 5: Department Management ── -->
       <div class="psec-panel" id="psec-team">
         <div class="psec-panel-header psec-team">
-          <i class="fas fa-users"></i> Team Management
-          <span class="psec-note">Team assignment and connections</span>
+          <i class="fas fa-users"></i> Department Management
+          <span class="psec-note">Department assignment and connections</span>
         </div>
         <div class="form-grid">
           <div class="form-group">
-            <label>Team Name</label>
+            <label>Department</label>
             <select id="f-team">
-              <option value="">Select Team</option>
-              <option>Champaklata</option><option>Chitralekha</option><option>Indulekha</option>
-              <option>Lalita</option><option>Nilachal</option><option>Other</option>
-              <option>Rangadevi</option><option>Sudevi</option><option>Tungavidya</option><option>Vishakha</option>
+              <option value="">Select Department</option>
+              <option>IGF</option><option>IYF</option><option>ICF_Mtg</option><option>ICF_Prji</option>
             </select>
+          </div>
+          <div class="form-group">
+            <label>Team <span class="field-hint">(sub-team within department)</span></label>
+            <input type="text" id="f-sub-team" placeholder="Enter team name…" autocomplete="off">
           </div>
           <div class="form-group">
             <label>Devotee Status</label>
@@ -1348,7 +1365,7 @@
               <th style="padding:.35rem .5rem;text-align:center;width:36px">✓</th>
               <th style="padding:.35rem .5rem;text-align:left">Name</th>
               <th style="padding:.35rem .5rem;text-align:left">Mobile</th>
-              <th style="padding:.35rem .5rem;text-align:left">Current Team</th>
+              <th style="padding:.35rem .5rem;text-align:left">Current Department</th>
             </tr></thead>
             <tbody id="import-preview-body"></tbody>
           </table>
@@ -1404,11 +1421,11 @@
 </div>
 
 
-<!-- Team Change History Modal -->
+<!-- Department Change History Modal -->
 <div id="team-history-modal" class="modal-overlay hidden">
   <div class="modal-box">
     <div class="modal-header">
-      <h2><i class="fas fa-pencil-alt"></i> Team Change History — <span id="team-history-name"></span></h2>
+      <h2><i class="fas fa-pencil-alt"></i> Department Change History — <span id="team-history-name"></span></h2>
       <button class="btn-icon close" onclick="closeModal('team-history-modal')"><i class="fas fa-times"></i></button>
     </div>
     <div id="team-history-content" style="padding:1rem;max-height:60vh;overflow-y:auto"></div>
@@ -1452,33 +1469,31 @@
   </div>
 </div>
 
-<!-- Team Rename Modal -->
+<!-- Department Rename Modal -->
 <div id="team-rename-modal" class="modal-overlay hidden">
   <div class="modal-box" style="max-width:440px">
     <div class="modal-header">
-      <h2><i class="fas fa-exchange-alt"></i> Rename Team</h2>
+      <h2><i class="fas fa-exchange-alt"></i> Rename Department</h2>
       <button class="btn-icon close" onclick="closeModal('team-rename-modal')"><i class="fas fa-times"></i></button>
     </div>
     <div style="padding:1.25rem">
-      <p style="font-size:.86rem;color:var(--text-muted);margin-bottom:1rem">Renames a team everywhere — devotees, calling records, attendance, activities, and all reports. This cannot be undone.</p>
+      <p style="font-size:.86rem;color:var(--text-muted);margin-bottom:1rem">Renames a department everywhere — devotees, calling records, attendance, activities, and all reports. This cannot be undone.</p>
       <div class="form-group">
-        <label>Current Team Name</label>
+        <label>Current Department Name</label>
         <select id="rename-team-from" class="filter-select" style="width:100%">
-          <option value="">— Select team to rename —</option>
-          <option>Champaklata</option><option>Chitralekha</option><option>Indulekha</option>
-          <option>Lalita</option><option>Nilachal</option><option>Other</option>
-          <option>Rangadevi</option><option>Sudevi</option><option>Tungavidya</option><option>Vishakha</option>
+          <option value="">— Select department to rename —</option>
+          <option>IGF</option><option>IYF</option><option>ICF_Mtg</option><option>ICF_Prji</option>
         </select>
       </div>
       <div class="form-group" style="margin-top:.75rem">
-        <label>New Team Name</label>
+        <label>New Department Name</label>
         <input type="text" id="rename-team-to" class="filter-select" style="width:100%" placeholder="Enter new name…" autocomplete="off">
       </div>
       <div id="rename-team-result" style="margin-top:.75rem;font-size:.84rem"></div>
     </div>
     <div class="modal-footer" style="padding:.75rem 1.25rem;display:flex;justify-content:flex-end;gap:.5rem;border-top:1px solid var(--color-border)">
       <button class="btn btn-ghost" onclick="closeModal('team-rename-modal')">Cancel</button>
-      <button class="btn btn-danger" onclick="doTeamRename()"><i class="fas fa-exchange-alt"></i> Rename Team</button>
+      <button class="btn btn-danger" onclick="doTeamRename()"><i class="fas fa-exchange-alt"></i> Rename Department</button>
     </div>
   </div>
 </div>
@@ -1734,14 +1749,14 @@
         </div>
       </div>
 
-      <!-- Option 2: Clear by Team + Date -->
+      <!-- Option 2: Clear by Department + Date -->
       <div class="clear-option-card">
-        <div class="clear-option-title"><i class="fas fa-users"></i> Clear Data for a Team on a Date</div>
-        <p class="clear-option-desc">Removes attendance records for one team on a specific Sunday.</p>
+        <div class="clear-option-title"><i class="fas fa-users"></i> Clear Data for a Department on a Date</div>
+        <p class="clear-option-desc">Removes attendance records for one department on a specific Sunday.</p>
         <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-top:.5rem">
           <input type="date" id="clear-team-date-input" class="filter-select" style="flex:1;min-width:130px">
           <select id="clear-team-select" class="filter-select" style="flex:1;min-width:130px">
-            <option value="">-- Select Team --</option>
+            <option value="">-- Select Department --</option>
           </select>
           <button class="btn btn-danger" onclick="clearDataForTeamDate()"><i class="fas fa-trash"></i> Clear</button>
         </div>
@@ -1792,17 +1807,15 @@
         <label for="edit-profile-name">Display Name</label>
         <input type="text" id="edit-profile-name" class="form-control" placeholder="Your name" maxlength="60">
       </div>
-      <!-- Team field -->
+      <!-- Department field -->
       <div class="form-group" id="edit-profile-team-group">
-        <label>Team</label>
+        <label>Department</label>
         <select id="edit-profile-team" class="form-control">
-          <option value="">No Team</option>
-          <option>Champaklata</option><option>Chitralekha</option><option>Indulekha</option>
-          <option>Lalita</option><option>Nilachal</option><option>Other</option>
-          <option>Rangadevi</option><option>Sudevi</option><option>Tungavidya</option><option>Vishakha</option>
+          <option value="">No Department</option>
+          <option>IGF</option><option>IYF</option><option>ICF_Mtg</option><option>ICF_Prji</option>
         </select>
         <div id="edit-profile-team-readonly" class="form-control" style="display:none;background:var(--accent-light);color:var(--text-muted);cursor:default"></div>
-        <p id="edit-profile-team-note" style="font-size:.72rem;color:var(--text-muted);margin-top:.25rem;display:none">Contact Super Admin to change your team.</p>
+        <p id="edit-profile-team-note" style="font-size:.72rem;color:var(--text-muted);margin-top:.25rem;display:none">Contact Super Admin to change your department.</p>
       </div>
       <!-- Position field -->
       <div class="form-group">
@@ -1842,16 +1855,14 @@
       </button>
       <hr style="margin:.25rem 0">
       <button class="btn btn-secondary" style="justify-content:flex-start;gap:.6rem" onclick="doMgmtAction('team')">
-        <i class="fas fa-users" style="color:#388e3c;width:1.1rem"></i> Change Team
+        <i class="fas fa-users" style="color:#388e3c;width:1.1rem"></i> Change Department
       </button>
       <div id="mgmt-team-picker" style="display:none;flex-direction:column;gap:.4rem">
         <select id="mgmt-new-team" class="form-control">
-          <option value="">Select Team…</option>
-          <option>Champaklata</option><option>Chitralekha</option><option>Indulekha</option>
-          <option>Lalita</option><option>Nilachal</option><option>Other</option>
-          <option>Rangadevi</option><option>Sudevi</option><option>Tungavidya</option><option>Vishakha</option>
+          <option value="">Select Department…</option>
+          <option>IGF</option><option>IYF</option><option>ICF_Mtg</option><option>ICF_Prji</option>
         </select>
-        <button class="btn btn-primary" onclick="doMgmtAction('team_confirm')"><i class="fas fa-check"></i> Confirm Team Change</button>
+        <button class="btn btn-primary" onclick="doMgmtAction('team_confirm')"><i class="fas fa-check"></i> Confirm Department Change</button>
       </div>
     </div>
   </div>
@@ -1896,7 +1907,7 @@
         <select id="bulk-action-type" onchange="_onBulkActionTypeChange()">
           <option value="">— Select action —</option>
           <option value="callingby">Assign Calling By</option>
-          <option value="team">Change Team</option>
+          <option value="team">Change Department</option>
           <option value="online">Shift to Online Class</option>
           <option value="festival">Shift to Festival Calling</option>
           <option value="not_interested">Mark Not Interested</option>
@@ -1904,18 +1915,16 @@
         </select>
       </div>
       <div class="form-group" id="bulk-team-wrap" style="display:none">
-        <label>New Team</label>
+        <label>New Department</label>
         <select id="bulk-team">
-          <option value="">— Select team —</option>
-          <option>Champaklata</option><option>Chitralekha</option><option>Indulekha</option>
-          <option>Lalita</option><option>Nilachal</option><option>Other</option>
-          <option>Rangadevi</option><option>Sudevi</option><option>Tungavidya</option><option>Vishakha</option>
+          <option value="">— Select Department —</option>
+          <option>IGF</option><option>IYF</option><option>ICF_Mtg</option><option>ICF_Prji</option>
         </select>
       </div>
       <div class="form-group" id="bulk-callingby-wrap" style="display:none">
         <label>New Calling By</label>
         <select id="bulk-callingby"><option value="">— Loading —</option></select>
-        <span class="field-hint">All eligible callers across teams</span>
+        <span class="field-hint">All eligible callers across departments</span>
       </div>
       <div id="bulk-confirm-msg" style="display:none;background:var(--warning-light);color:var(--warning);padding:.55rem .75rem;border-radius:8px;font-size:.82rem"></div>
       <div class="form-actions">
@@ -1937,8 +1946,8 @@
     <input type="hidden" id="cb-devotee-team">
     <div style="padding:1.25rem;display:flex;flex-direction:column;gap:.85rem">
       <div style="font-size:.8rem;color:var(--text-muted);background:var(--bg-subtle);padding:.55rem .75rem;border-radius:8px">
-        <i class="fas fa-users"></i> Team: <strong id="cb-team-display">—</strong>
-        <div style="font-size:.72rem;margin-top:.2rem">Only users assigned to this team are shown. Profile decides team &amp; position.</div>
+        <i class="fas fa-users"></i> Department: <strong id="cb-team-display">—</strong>
+        <div style="font-size:.72rem;margin-top:.2rem">Only users assigned to this department are shown. Profile decides department &amp; position.</div>
       </div>
       <div class="form-group">
         <label>New Calling By</label>
@@ -2120,16 +2129,15 @@
         <label><i class="fas fa-user-tag"></i> App Role <span style="font-size:.75rem;font-weight:400;color:var(--text-muted)">(controls what tabs they can access)</span></label>
         <select id="ua-role">
           <option value="serviceDevotee">Caller / Facilitator</option>
-          <option value="teamAdmin">Team Coordinator</option>
+          <option value="teamAdmin">Department Coordinator</option>
           <option value="superAdmin">Super Admin</option>
         </select>
       </div>
       <div class="form-group">
-        <label><i class="fas fa-users"></i> Team</label>
+        <label><i class="fas fa-users"></i> Department</label>
         <select id="ua-team">
-          <option value="">No Team</option>
-          <option>Champaklata</option><option>Chitralekha</option><option>Indulekha</option>
-          <option>Lalita</option><option>Nilachal</option><option>Other</option>
+          <option value="">No Department</option>
+          <option>IGF</option><option>IYF</option><option>ICF_Mtg</option><option>ICF_Prji</option>
           <option>Rangadevi</option><option>Sudevi</option><option>Tungavidya</option><option>Vishakha</option>
         </select>
       </div>
@@ -2140,7 +2148,7 @@
       <div style="display:flex;align-items:center;justify-content:space-between;padding:.6rem .75rem;background:var(--brand-subtle);border:1px solid var(--border);border-radius:var(--radius);gap:.75rem">
         <div>
           <div style="font-weight:700;font-size:.85rem;color:var(--brand)"><i class="fas fa-hands-helping"></i> Attendance Seva</div>
-          <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">Can mark live attendance for ALL teams</div>
+          <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">Can mark live attendance for ALL departments</div>
         </div>
         <label class="toggle-switch" style="margin:0" title="Grant live attendance access for all teams">
           <input type="checkbox" id="ua-att-seva">
@@ -2170,7 +2178,7 @@
       <table class="report-table" style="min-width:480px;margin-top:.75rem">
         <thead>
           <tr>
-            <th>Team</th>
+            <th>Department</th>
             <th class="num-th">Total</th>
             <th class="num-th">Called</th>
             <th class="num-th" style="color:var(--info)">Said Coming</th>
@@ -2208,7 +2216,7 @@
         </div>
       </div>
       <div class="form-group">
-        <label>Team</label>
+        <label>Department</label>
         <select id="bd-team"></select>
       </div>
       <div class="form-group">
@@ -2253,7 +2261,7 @@
     </div>
     <div style="padding:1.25rem;display:flex;flex-direction:column;gap:.75rem">
       <div class="form-group">
-        <label>Team <span class="req">*</span></label>
+        <label>Department <span class="req">*</span></label>
         <select id="don-team"></select>
       </div>
       <div class="form-group">
@@ -2315,7 +2323,7 @@
         </div>
       </div>
       <div class="form-group">
-        <label>Team</label>
+        <label>Department</label>
         <select id="reg-team"></select>
       </div>
       <div class="form-group">
@@ -2373,7 +2381,7 @@
         </div>
       </div>
       <div class="form-group">
-        <label>Team</label>
+        <label>Department</label>
         <select id="srv-team"></select>
       </div>
       <div class="form-group">
@@ -2454,9 +2462,9 @@
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <!-- App -->
-<script src="js/config.js"></script>
-<script src="js/db.js"></script>
-<script src="js/excel.js?v=135"></script>
+<script src="config.js"></script>
+<script src="db.js"></script>
+<script src="excel.js"></script>
 <script src="js/ui-core.js"></script>
 <script src="js/ui-devotees.js"></script>
 <script src="js/ui-calling.js"></script>

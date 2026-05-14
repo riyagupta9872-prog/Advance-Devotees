@@ -23,11 +23,13 @@ function toSnake(d) {
     mobile_alt:          d.mobileAlt || null,
     address:             d.address || null,
     dob:                 d.dob || null,
+    anniversary_date:    d.anniversaryDate || null,
     date_of_joining:     d.dateOfJoining || null,
     chanting_rounds:     d.chantingRounds || 0,
     kanthi:              d.kanthi || 0,
     gopi_dress:          d.gopiDress || 0,
     team_name:           d.teamName || null,
+    sub_team:            d.subTeam || null,
     devotee_status:      d.devoteeStatus || 'Expected to be Serious',
     facilitator:         d.facilitator || null,
     reference_by:        d.referenceBy || null,
@@ -69,11 +71,13 @@ function toCamel(f) {
     mobileAlt:         (f.mobile_alt || '').trim() || null,
     address:           (f.address || '').trim() || null,
     dob:               f.dob || null,
+    anniversaryDate:   f.anniversary_date || null,
     dateOfJoining:     f.date_of_joining || null,
     chantingRounds:    parseInt(f.chanting_rounds) || 0,
     kanthi:            parseInt(f.kanthi) || 0,
     gopiDress:         parseInt(f.gopi_dress) || 0,
     teamName:          f.team_name || null,
+    subTeam:           (f.sub_team || '').trim() || null,
     devoteeStatus:     f.devotee_status || 'Expected to be Serious',
     facilitator:       (f.facilitator || '').trim() || null,
     referenceBy:       (f.reference_by || '').trim() || null,
@@ -1332,6 +1336,17 @@ const DB = {
       mds.add(`${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
     }
     return raw.filter(d => d.dob && mds.has(d.dob.slice(5))).map(toSnake);
+  },
+
+  async getCareAnniversaries() {
+    const raw = await DevoteeCache.all();
+    const today = new Date();
+    const mds = new Set();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(today); d.setDate(today.getDate() + i);
+      mds.add(`${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+    }
+    return raw.filter(d => d.anniversaryDate && mds.has(d.anniversaryDate.slice(5))).map(toSnake);
   },
 
   async getCareInactive() {

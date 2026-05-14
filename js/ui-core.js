@@ -164,7 +164,7 @@ async function doLogin(e) {
   }
 }
 
-let _signupBusy = false;
+var _signupBusy = false;
 
 async function doSignup(e) {
   e.preventDefault();
@@ -324,7 +324,7 @@ function renderSignupRequests() {
     const tb = b.createdAt?.toMillis?.() || 0;
     return tb - ta;
   });
-  const teamOptions = '<option value="">— No team —</option>' +
+  const teamOptions = '<option value="">— No department —</option>' +
     TEAMS.map(t => `<option value="${t}">${t}</option>`).join('');
   el.innerHTML = rows.map(r => {
     const when = r.createdAt?.toDate
@@ -338,14 +338,14 @@ function renderSignupRequests() {
         <div class="signup-req-meta">
           <i class="fas fa-envelope"></i> ${r.email || '—'}
           &nbsp;·&nbsp; requested ${when}
-          ${r.requestedRole ? '&nbsp;·&nbsp; wants <strong>' + (r.requestedRole === 'teamAdmin' ? 'Coordinator' : 'Facilitator') + '</strong>' : ''}
+          ${r.requestedRole ? '&nbsp;·&nbsp; wants <strong>' + (r.requestedRole === 'teamAdmin' ? 'Department Coordinator' : 'Facilitator') + '</strong>' : ''}
           ${r.requestedTeam ? ' for <strong>' + r.requestedTeam + '</strong>' : ''}
         </div>
       </div>
       <div class="signup-req-actions">
         <select id="srq-role-${r.id}" class="filter-select">
           <option value="serviceDevotee"${r.requestedRole==='serviceDevotee'?' selected':''}>Facilitator</option>
-          <option value="teamAdmin"${r.requestedRole==='teamAdmin'?' selected':''}>Coordinator</option>
+          <option value="teamAdmin"${r.requestedRole==='teamAdmin'?' selected':''}>Department Coordinator</option>
           <option value="superAdmin">Super Admin</option>
         </select>
         <select id="srq-team-${r.id}" class="filter-select">
@@ -543,7 +543,7 @@ function _applySidebarInfo() {
     const t = AppState.userTeam;
     const p = AppState.userPosition;
     role.textContent = r === 'superAdmin' ? 'Super Admin'
-      : r === 'teamAdmin' ? (t ? `${t} · Coordinator` : 'Coordinator')
+      : r === 'teamAdmin' ? (t ? `${t} · Department Coordinator` : 'Department Coordinator')
       : (t ? `${t} · ${p || 'Facilitator'}` : (p || 'Facilitator'));
   }
   const pic = AppState.profilePic;
@@ -774,7 +774,7 @@ function renderUserMgmtList() {
   }
   list.innerHTML = filtered.map(u => {
     const roleLabel = u.role === 'superAdmin' ? 'Super Admin'
-      : u.role === 'teamAdmin' ? 'Coordinator' : 'Facilitator';
+      : u.role === 'teamAdmin' ? 'Department Coordinator' : 'Facilitator';
     const customTitle = u.position && u.position.toLowerCase() !== roleLabel.toLowerCase() ? u.position : '';
     const meta = [roleLabel, u.teamName || '', customTitle].filter(Boolean).join(' · ');
     return `<div class="um-row" onclick="openUserAction('${u.uid}')">
@@ -846,7 +846,7 @@ function applyRoleUI() {
   const pill = document.getElementById('header-role-pill');
   const pos = AppState.userPosition;
   pill.textContent = role === 'superAdmin' ? 'Super Admin'
-    : role === 'teamAdmin' ? (team ? `${team} - Coordinator` : 'Coordinator')
+    : role === 'teamAdmin' ? (team ? `${team} - Department Coordinator` : 'Department Coordinator')
     : (team ? `${team} - ${pos || 'Facilitator'}` : (pos || 'Facilitator'));
   pill.style.background = role === 'superAdmin' ? '#fde68a' : role === 'teamAdmin' ? '#fef9c3' : '#fffbeb';
 
@@ -981,11 +981,11 @@ async function openAdminPanel() {
         <div class="admin-user-controls">
           <select class="filter-select" id="role-${u.uid}" onchange="updateUserRole('${u.uid}')">
             <option value="serviceDevotee"${u.role==='serviceDevotee'?' selected':''}>Facilitator</option>
-            <option value="teamAdmin"${u.role==='teamAdmin'?' selected':''}>Coordinator</option>
+            <option value="teamAdmin"${u.role==='teamAdmin'?' selected':''}>Department Coordinator</option>
             <option value="superAdmin"${u.role==='superAdmin'?' selected':''}>Super Admin</option>
           </select>
           <select class="filter-select" id="team-${u.uid}" onchange="updateUserRole('${u.uid}')">
-            ${teams.map(t => `<option value="${t}"${u.teamName===t?' selected':''}>${t||'No Team'}</option>`).join('')}
+            ${teams.map(t => `<option value="${t}"${u.teamName===t?' selected':''}>${t||'No Department'}</option>`).join('')}
           </select>
           <input class="filter-select" id="pos-${u.uid}" placeholder="Position…" value="${u.position||''}" style="width:110px" onchange="updateUserRole('${u.uid}')" onblur="updateUserRole('${u.uid}')" />
           <label style="display:flex;align-items:center;gap:.35rem;font-size:.75rem;font-weight:600;color:var(--brand);white-space:nowrap;cursor:pointer" title="Gives this person Live Attendance access for all teams">
@@ -1135,6 +1135,7 @@ async function initApp() {
   loadDevotees();
   loadCallingPersonsFilter();
   loadBirthdays();
+  loadAnniversaries();
   initReportsSessionFilter?.();
   initAllPickers();
   initHomeDevoteePickers?.();
@@ -1266,7 +1267,7 @@ function _mfbReloadTeamOptions() {
   const list = document.getElementById('fr-dropdown-list-team');
   if (!list) return;
   const current = AppState.filters?.team || '';
-  const items = [{ value: '', label: 'All Teams' }, ...TEAMS.map(t => ({ value: t, label: t }))];
+  const items = [{ value: '', label: 'All Departments' }, ...TEAMS.map(t => ({ value: t, label: t }))];
   list.innerHTML = items.map(it => {
     const safe = it.value.replace(/'/g, "\\'");
     return `<div class="fr-dropdown-item${it.value === current ? ' active' : ''}"
@@ -1635,7 +1636,7 @@ function setupUserPicker(containerId, hiddenId, getTeam) {
     }
     dropdown.innerHTML = results.slice(0, 12).map(u => {
       const display = (u.name || u.email || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-      const meta = `${u.teamName || ''}${u.teamName ? ' · ' : ''}${u.role === 'teamAdmin' ? 'Coordinator' : 'Calling Facilitator'}`;
+      const meta = `${u.teamName || ''}${u.teamName ? ' · ' : ''}${u.role === 'teamAdmin' ? 'Department Coordinator' : 'Calling Facilitator'}`;
       return `<div class="picker-option" onclick="selectPicker('${containerId}','${hiddenId}','${display}','${u.uid}')">
         <span>${u.name || u.email || '(no name)'}</span>
         <span class="picker-team">${meta}</span>
@@ -1780,6 +1781,25 @@ async function loadBirthdays() {
   } catch (_) {}
 }
 function closeBirthdayPopup() { document.getElementById('birthday-popup').classList.add('hidden'); }
+
+async function loadAnniversaries() {
+  try {
+    const anns = await DB.getCareAnniversaries();
+    if (!anns.length) return;
+    document.getElementById('anniversary-list').innerHTML = anns.map(d => `
+      <div class="birthday-item">
+        <div class="devotee-avatar" style="width:38px;height:38px;font-size:.9rem;background:linear-gradient(135deg,#e91e63,#ff9800)">${initials(d.name)}</div>
+        <div class="birthday-name-wrap">
+          <span class="birthday-name">${d.name}</span>
+          ${d.team_name ? `<span class="birthday-team">${d.team_name}</span>` : ''}
+        </div>
+        <span class="birthday-date">${formatBirthday(d.anniversary_date)}</span>
+        ${contactIcons(d.mobile)}
+      </div>`).join('');
+    document.getElementById('anniversary-popup').classList.remove('hidden');
+  } catch (_) {}
+}
+function closeAnniversaryPopup() { document.getElementById('anniversary-popup').classList.add('hidden'); }
 
 // ── BOTTOM NAV ARROWS ─────────────────────────────────
 function _bnavScroll(dir) {
