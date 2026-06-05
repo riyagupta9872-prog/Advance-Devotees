@@ -1,7 +1,7 @@
 {
-  "name": "Sakhi Sang – Devotee Management",
-  "short_name": "Sakhi Sang",
-  "description": "Sunday class attendance & devotee management for Sakhi Sang",
+  "name": "Advance Devotees – Department Management",
+  "short_name": "Adv Devotees",
+  "description": "Department-based devotee management for Advance Devotees",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

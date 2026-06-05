@@ -1,5 +1,99 @@
 /* ══ UI-DEVOTEES.JS – Devotee list, form modal, profile modal ══ */
 
+// pending devotee photo: undefined = unchanged, null = remove, string = new base64
+let _pendingDevoteePhoto;
+// photo of the devotee currently open in the profile view modal
+let _viewingDevoteePhoto = null;
+
+function _renderDevoteePicPreview(src, name) {
+  const img   = document.getElementById('f-photo-img');
+  const inits = document.getElementById('f-photo-initials');
+  const rmBtn = document.getElementById('f-remove-photo-btn');
+  if (!img) return;
+  if (src) {
+    img.src = src; img.style.display = 'block';
+    inits.style.display = 'none';
+    if (rmBtn) rmBtn.style.display = '';
+  } else {
+    img.style.display = 'none';
+    inits.textContent = initials(name || '?');
+    inits.style.display = '';
+    if (rmBtn) rmBtn.style.display = 'none';
+  }
+}
+
+function handleDevoteePhotoSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 300 * 1024) {
+    showToast(`Image too large (${(file.size / 1024).toFixed(1)} KB). Please choose one under 300 KB.`, 'error');
+    e.target.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    _pendingDevoteePhoto = ev.target.result;
+    _renderDevoteePicPreview(_pendingDevoteePhoto, document.getElementById('f-name').value);
+  };
+  reader.readAsDataURL(file);
+}
+window.handleDevoteePhotoSelect = handleDevoteePhotoSelect;
+
+function removeDevoteePhoto() {
+  _pendingDevoteePhoto = null;
+  document.getElementById('f-photo-input').value = '';
+  _renderDevoteePicPreview(null, document.getElementById('f-name').value);
+}
+window.removeDevoteePhoto = removeDevoteePhoto;
+
+function openPhotoLightbox(src, name) {
+  if (!src) return;
+  const lb  = document.getElementById('photo-lightbox');
+  const img = document.getElementById('photo-lightbox-img');
+  if (!lb || !img) return;
+  img.src = src; img.alt = name || '';
+  lb.classList.remove('hidden');
+}
+window.openPhotoLightbox = openPhotoLightbox;
+
+// Called from inline onclick in the profile modal hero — reads the module-level variable
+function openViewingDevoteePhoto() { openPhotoLightbox(_viewingDevoteePhoto, AppState.currentDevoteeName); }
+window.openViewingDevoteePhoto = openViewingDevoteePhoto;
+
+// Direct photo save from the profile VIEW modal (no need to open the edit form)
+async function handleProfileViewPhotoSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+  if (file.size > 300 * 1024) {
+    showToast(`Image too large (${(file.size / 1024).toFixed(1)} KB). Please choose one under 300 KB.`, 'error');
+    return;
+  }
+  const devoteeId = AppState.currentDevoteeId;
+  if (!devoteeId) return;
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    const base64 = ev.target.result;
+    try {
+      await fdb.collection('devotees').doc(devoteeId).update({ profilePic: base64, updatedAt: TS() });
+      DevoteeCache.bust();
+      _viewingDevoteePhoto = base64;
+      // Refresh the hero in place — re-open same modal content
+      openProfileModal(devoteeId);
+      showToast('Photo updated! Hare Krishna 🙏', 'success');
+    } catch (err) {
+      showToast('Failed to save photo: ' + err.message, 'error');
+    }
+  };
+  reader.readAsDataURL(file);
+}
+window.handleProfileViewPhotoSelect = handleProfileViewPhotoSelect;
+
+function closePhotoLightbox() {
+  document.getElementById('photo-lightbox')?.classList.add('hidden');
+}
+window.closePhotoLightbox = closePhotoLightbox;
+
 // Count Sundays from a given date up to and including today.
 // Used for the Lifetime Attendance denominator.
 function _sundaysSince(fromDateStr) {
@@ -21,7 +115,7 @@ function _sundaysSince(fromDateStr) {
 // Boolean attire fields (tilak/kanthi/gopi) have a meaningful 0 default, so excluded.
 function _calcProfileCompletion(d) {
   const checks = [
-    d.name, d.mobile, d.dob, d.address, d.email,
+    d.name, d.mobile, d.dob, d.gender, d.address, d.email,
     d.education, d.profession, d.reading, d.hearing, d.hobbies,
     d.reference_by, d.facilitator, d.calling_by,
     d.family_favourable,
@@ -60,6 +154,7 @@ async function loadDevotees() {
   // dispatchFilters() so AppState.filters.team is already correct here.
   const filters = {
     search:     document.getElementById('devotee-search').value.trim(),
+    dept:       getFilterDept(),
     team:       getFilterTeam(),
     calling_by: getFilterCallingBy(),
     status:     document.getElementById('filter-status').value,
@@ -78,15 +173,20 @@ async function loadDevotees() {
   }
 }
 
+function _devAvatarHtml(d) {
+  return d.profile_pic
+    ? `<div class="devotee-avatar" style="overflow:hidden;padding:0"><img src="${d.profile_pic}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></div>`
+    : `<div class="devotee-avatar">${initials(d.name)}</div>`;
+}
+
 function renderDevoteeItem(d) {
   return `
     <div class="devotee-item" onclick="openProfileModal('${d.id}')">
-      <div class="devotee-avatar">${initials(d.name)}</div>
+      ${_devAvatarHtml(d)}
       <div class="devotee-info">
         <div class="devotee-name">
-          ${d.name}
+          ${d.name}${nameTags(d)}
           ${isBirthdayWeek(d.dob) ? '<i class="fas fa-birthday-cake birthday-icon" title="Birthday this week!"></i>' : ''}
-          ${isAnniversaryWeek(d.anniversary_date) ? '<i class="fas fa-heart anniversary-icon" title="Anniversary this week!"></i>' : ''}
         </div>
         <div class="devotee-meta">${d.mobile || '—'}</div>
         <div class="devotee-badges">${statusBadge(d.devotee_status)}${d.team_name ? ' ' + teamBadge(d.team_name) : ''}${d.reference_by ? `<span style="font-size:.7rem;color:var(--text-muted);margin-left:.3rem"><i class="fas fa-user-plus" style="font-size:.6rem"></i> ${d.reference_by}</span>` : ''}</div>
@@ -118,6 +218,7 @@ async function openProfileModal(id) {
   if (actsEl) actsEl.innerHTML = '';
   try {
     const d = await DB.getDevotee(id);
+    _viewingDevoteePhoto = d.profile_pic || null;
     document.getElementById('profile-modal-name').textContent = d.name;
     AppState.currentDevoteeName = d.name;
     const yn = v => v ? '<span class="pf-yes">✓ Yes</span>' : '<span class="pf-no">✗ No</span>';
@@ -128,11 +229,32 @@ async function openProfileModal(id) {
     // Hero + completion gauge
     if (heroEl) {
       const pct = _calcProfileCompletion(d);
+      const canEdit = AppState.userRole === 'superAdmin' || AppState.userRole === 'deptCoordinator' || AppState.userRole === 'teamAdmin';
+      // If has photo: clicking opens lightbox; camera overlay on hover lets admins change it.
+      // If no photo: clicking the avatar directly opens file upload (admins only).
+      let heroAvatarHtml;
+      if (d.profile_pic) {
+        heroAvatarHtml = `
+          <div class="pv-avatar-wrap" onclick="openViewingDevoteePhoto()" title="View photo">
+            <div class="profile-avatar-lg" style="overflow:hidden;padding:0">
+              <img src="${d.profile_pic}" alt="${d.name}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">
+            </div>
+            ${canEdit ? `<div class="pv-avatar-cam-overlay" onclick="event.stopPropagation();document.getElementById('pv-photo-input').click()" title="Change photo"><i class="fas fa-camera"></i></div>` : ''}
+          </div>`;
+      } else if (canEdit) {
+        heroAvatarHtml = `
+          <div class="pv-avatar-wrap" onclick="document.getElementById('pv-photo-input').click()" title="Upload photo">
+            <div class="profile-avatar-lg">${initials(d.name)}</div>
+            <div class="pv-avatar-cam-overlay"><i class="fas fa-camera"></i></div>
+          </div>`;
+      } else {
+        heroAvatarHtml = `<div class="profile-avatar-lg">${initials(d.name)}</div>`;
+      }
       heroEl.innerHTML = `
         <div class="profile-hero">
-          <div class="profile-avatar-lg">${initials(d.name)}</div>
+          ${heroAvatarHtml}
           <div class="profile-hero-info">
-            <h2>${d.name}${isBirthdayWeek(d.dob) ? ' 🎂' : ''}${isAnniversaryWeek(d.anniversary_date) ? ' 💍' : ''}</h2>
+            <h2>${d.name}${nameTags(d)}${isBirthdayWeek(d.dob) ? ' 🎂' : ''}</h2>
             <div class="profile-hero-meta">${d.team_name ? teamBadge(d.team_name) : ''} ${statusBadge(d.devotee_status)}${d.is_not_interested ? ' <span class="badge" style="background:#bf360c;color:#fff"><i class="fas fa-ban"></i> Not Interested</span>' : ''}</div>
             <div class="profile-hero-meta" style="margin-top:.4rem">${contactIcons(d.mobile, { altMobile: d.mobile_alt, devoteeId: d.id, name: d.name })}${d.mobile ? `<span style="font-size:.85rem;margin-left:.4rem">${d.mobile}</span>` : ''}${d.mobile_alt ? `<span style="font-size:.72rem;color:var(--text-muted);margin-left:.4rem">(Alt: ${d.mobile_alt})</span>` : ''}</div>
           </div>
@@ -153,7 +275,9 @@ async function openProfileModal(id) {
         <div class="profile-fields">
           <div class="profile-field full"><label>Residential Address</label><span>${d.address || '—'}</span></div>
           <div class="profile-field"><label>Date of Birth</label><span>${formatDate(d.dob)}${isBirthdayWeek(d.dob) ? ' 🎂' : ''}</span></div>
-          <div class="profile-field"><label>Date of Anniversary</label><span>${formatDate(d.anniversary_date)}${isAnniversaryWeek(d.anniversary_date) ? ' 💍' : ''}</span></div>
+          <div class="profile-field"><label>Gender</label><span>${d.gender || '—'}</span></div>
+          <div class="profile-field"><label>Marriage Anniversary</label><span>${d.marriage_anniversary ? formatDate(d.marriage_anniversary) : '—'}</span></div>
+          <div class="profile-field"><label>Department</label><span>${d.department || (d.gender ? getDeptForGender(d.gender) : '') || '—'}</span></div>
           <div class="profile-field"><label>Mobile (Primary)</label><span>${d.mobile || '—'}</span></div>
           <div class="profile-field"><label>Alternate Mobile</label><span>${d.mobile_alt || '—'}</span></div>
           <div class="profile-field"><label>Email</label><span>${d.email ? `<a href="mailto:${d.email}" style="color:var(--primary)">${d.email}</a>` : '—'}</span></div>
@@ -161,15 +285,14 @@ async function openProfileModal(id) {
         </div>
       </div>
 
-      <!-- Department panel -->
+      <!-- Team panel -->
       <div class="psec-panel" id="pvpanel-team">
         <div class="psec-panel-header psec-team">
-          <i class="fas fa-users"></i> Department Management
-          <span class="psec-note">Department assignment and connections</span>
+          <i class="fas fa-users"></i> Team Management
+          <span class="psec-note">Team assignment and connections</span>
         </div>
         <div class="profile-fields">
-          <div class="profile-field"><label>Department</label><span>${d.team_name ? teamBadge(d.team_name) : '—'}</span></div>
-          <div class="profile-field"><label>Team</label><span>${d.sub_team || '—'}</span></div>
+          <div class="profile-field"><label>Team Name</label><span>${d.team_name ? teamBadge(d.team_name) : '—'}</span></div>
           <div class="profile-field"><label>Devotee Status</label><span>${statusBadge(d.devotee_status)}</span></div>
           <div class="profile-field"><label>Date of Joining</label><span>${formatDate(d.date_of_joining)}</span></div>
           <div class="profile-field"><label>Reference By</label><span id="pv-ref-by">${d.reference_by || '—'}</span></div>
@@ -207,7 +330,7 @@ async function openProfileModal(id) {
           <div class="profile-field"><label>Hearing</label><span>${d.hearing ? `<span class="pf-tag">${d.hearing}</span>` : '—'}</span></div>
           <div class="profile-field"><label>Tilak</label>${yn(d.tilak)}</div>
           <div class="profile-field"><label>Kanthi</label>${yn(d.kanthi)}</div>
-          <div class="profile-field"><label>Gopi Dress</label>${yn(d.gopi_dress)}</div>
+          <div class="profile-field"><label>Vaishnav Dress</label>${yn(d.vaishnav_dress)}</div>
           <div class="profile-field"><label>Plays Instrument</label><span>${
             d.plays_instrument === 'Yes'
               ? `<span class="pf-tag pf-kirtan"><i class="fas fa-music"></i> Yes${d.instrument_name ? ` — ${d.instrument_name}` : ''}</span>`
@@ -263,7 +386,7 @@ async function openProfileModal(id) {
 
     // Action row
     if (actsEl) {
-      const adminOrCoord = AppState.userRole === 'superAdmin' || AppState.userRole === 'teamAdmin';
+      const adminOrCoord = AppState.userRole === 'superAdmin' || AppState.userRole === 'deptCoordinator' || AppState.userRole === 'teamAdmin';
       actsEl.innerHTML = `
         <div style="display:flex;gap:.5rem;align-items:center">
           ${AppState.userRole === 'superAdmin' && !d.is_not_interested ? `<button class="btn btn-warning-soft" onclick="markNotInterested('${d.id}')"><i class="fas fa-ban"></i> Not Interested</button>` : ''}
@@ -344,15 +467,19 @@ function openDevoteeFormModal(fromAttendance = false, editId = null) {
 }
 
 function clearDevoteeForm() {
+  _pendingDevoteePhoto = undefined;
+  _renderDevoteePicPreview(null, '');
+  const photoInput = document.getElementById('f-photo-input');
+  if (photoInput) photoInput.value = '';
   ['f-name','f-mobile','f-mobile-alt','f-address','f-education','f-email','f-profession','f-hobbies','f-family-members','f-family-participants'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   document.getElementById('f-dob').value = '';
-  const fAnn = document.getElementById('f-anniversary'); if (fAnn) fAnn.value = '';
-  const fSubTeam = document.getElementById('f-sub-team'); if (fSubTeam) fSubTeam.value = '';
+  const fGender = document.getElementById('f-gender'); if (fGender) fGender.value = '';
+  const fAnniversary = document.getElementById('f-anniversary'); if (fAnniversary) fAnniversary.value = '';
   document.getElementById('f-joining').value = getToday();
   document.getElementById('f-chanting').value = '0';
-  // New devotees default to no department; status "New Devotee" — super admin
+  // New devotees default to team "Other" and status "New Devotee" — super admin
   // can re-assign later from the Calling Mgmt → New Comers tab.
-  document.getElementById('f-team').value = '';
+  document.getElementById('f-team').value = 'Other';
   document.getElementById('f-status').value = 'New Devotee';
   document.getElementById('f-kanthi').value = '0';
   document.getElementById('f-gopi').value = '0';
@@ -372,7 +499,7 @@ function clearDevoteeForm() {
   clearFieldError('mobile');
   // Coordinators / facilitators who can only see their own team get that team
   // pre-filled instead of "Other".
-  if ((AppState.userRole === 'teamAdmin' || AppState.userRole === 'serviceDevotee') && AppState.userTeam) {
+  if ((AppState.userRole === 'deptCoordinator' || AppState.userRole === 'teamAdmin' || AppState.userRole === 'serviceDevotee') && AppState.userTeam) {
     document.getElementById('f-team').value = AppState.userTeam;
   }
 }
@@ -380,19 +507,21 @@ function clearDevoteeForm() {
 async function populateEditForm(id) {
   try {
     const d = await DB.getDevotee(id);
+    _pendingDevoteePhoto = undefined;
+    _renderDevoteePicPreview(d.profile_pic || null, d.name);
     document.getElementById('f-name').value     = d.name || '';
     document.getElementById('f-mobile').value   = d.mobile || '';
     const fMobileAlt = document.getElementById('f-mobile-alt'); if (fMobileAlt) fMobileAlt.value = d.mobile_alt || '';
     document.getElementById('f-address').value  = d.address || '';
     document.getElementById('f-dob').value      = d.dob || '';
-    const fAnnEdit = document.getElementById('f-anniversary'); if (fAnnEdit) fAnnEdit.value = d.anniversary_date || '';
-    const fSubTeamEdit = document.getElementById('f-sub-team'); if (fSubTeamEdit) fSubTeamEdit.value = d.sub_team || '';
+    const fGender = document.getElementById('f-gender'); if (fGender) { fGender.value = d.gender || ''; }
+    const fAnniversary = document.getElementById('f-anniversary'); if (fAnniversary) fAnniversary.value = d.marriage_anniversary || '';
     document.getElementById('f-joining').value  = d.date_of_joining || '';
     document.getElementById('f-chanting').value = d.chanting_rounds || 0;
     document.getElementById('f-team').value     = d.team_name || '';
     document.getElementById('f-status').value   = d.devotee_status || 'Expected to be Serious';
     document.getElementById('f-kanthi').value   = d.kanthi || 0;
-    document.getElementById('f-gopi').value     = d.gopi_dress || 0;
+    document.getElementById('f-gopi').value     = d.vaishnav_dress || 0;
     if (d.facilitator) { document.getElementById('f-facilitator').value = d.facilitator; const pi = document.querySelector('#picker-facilitator .picker-input'); if(pi){pi.value=d.facilitator;pi.classList.add('has-value');} }
     if (d.reference_by) {
       document.getElementById('f-reference').value = d.reference_by;
@@ -430,21 +559,44 @@ async function populateEditForm(id) {
   } catch (_) { showToast('Failed to load profile', 'error'); }
 }
 
+function _onGenderChange(val) {
+  // Auto-suggest team from gender-based department — update team dropdown's first selection
+  // but don't override an already-set team.
+  const teamEl = document.getElementById('f-team');
+  if (teamEl && !teamEl.value) {
+    const dept = getDeptForGender(val);
+    if (dept && DEPARTMENTS[dept]?.length) {
+      // pre-select first team of dept as a hint only if blank
+      // leave blank to avoid forcing assignment
+    }
+  }
+}
+window._onGenderChange = _onGenderChange;
+
+function _onTeamChange(val) {
+  // When team is selected, optionally auto-set gender field hint based on dept
+  // (just a UX hint — user can override gender freely)
+}
+window._onTeamChange = _onTeamChange;
+
 function getFormPayload() {
+  const gender = document.getElementById('f-gender')?.value || '';
+  const teamName = document.getElementById('f-team').value;
   return {
     name:              document.getElementById('f-name').value.trim(),
     mobile:            document.getElementById('f-mobile').value.replace(/\D/g,'').slice(0,10),
     mobile_alt:        (document.getElementById('f-mobile-alt')?.value || '').replace(/\D/g,'').slice(0,10),
     address:           document.getElementById('f-address').value.trim(),
     dob:               document.getElementById('f-dob').value,
-    anniversary_date:  document.getElementById('f-anniversary')?.value || null,
-    sub_team:          document.getElementById('f-sub-team')?.value.trim() || null,
+    gender:            gender,
+    marriage_anniversary: document.getElementById('f-anniversary')?.value || '',
+    department:        getDeptForGender(gender) || getDeptForTeam(teamName) || '',
     date_of_joining:   document.getElementById('f-joining').value,
     chanting_rounds:   parseInt(document.getElementById('f-chanting').value) || 0,
-    team_name:         document.getElementById('f-team').value,
+    team_name:         teamName,
     devotee_status:    document.getElementById('f-status').value,
     kanthi:            parseInt(document.getElementById('f-kanthi').value),
-    gopi_dress:        parseInt(document.getElementById('f-gopi').value),
+    vaishnav_dress:    parseInt(document.getElementById('f-gopi').value),
     facilitator:       document.getElementById('f-facilitator').value.trim(),
     reference_by:      document.getElementById('f-reference').value.trim() || document.querySelector('#picker-reference .picker-input')?.value.trim() || '',
     calling_by:        document.getElementById('f-calling-by').value.trim(),
@@ -476,6 +628,7 @@ async function saveDevotee(e) {
   clearFieldError('mobile');
   const id = document.getElementById('f-id').value;
   const payload = getFormPayload();
+  if (_pendingDevoteePhoto !== undefined) payload.profile_pic = _pendingDevoteePhoto;
 
   // Required fields: Name + Mobile + Reference By only.
   if (!payload.name) {
@@ -494,7 +647,7 @@ async function saveDevotee(e) {
   if (payload.calling_by) {
     const teamUsers = await DB.getUsersForTeam(payload.team_name);
     if (!teamUsers.some(u => u.name === payload.calling_by)) {
-      showToast(`"${payload.calling_by}" has no system login in ${payload.team_name || 'this department'}. Assign a login first.`, 'error');
+      showToast(`"${payload.calling_by}" has no system login in ${payload.team_name || 'this team'}. Assign a login first.`, 'error');
       return;
     }
   }
@@ -571,9 +724,11 @@ async function loadReferredDevoteesPanel() {
     }
     inner.innerHTML = refs.map(d => `
       <div class="devotee-item" onclick="AppState.currentDevoteeId='${d.id}';openProfileModal('${d.id}')" style="cursor:pointer">
-        <div class="devotee-avatar">${initials(d.name)}</div>
+        ${d.profilePic
+          ? `<div class="devotee-avatar" style="overflow:hidden;padding:0"><img src="${d.profilePic}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></div>`
+          : `<div class="devotee-avatar">${initials(d.name)}</div>`}
         <div class="devotee-info">
-          <div class="devotee-name">${d.name}</div>
+          <div class="devotee-name">${d.name}${nameTags(d)}</div>
           <div class="devotee-meta">${d.mobile || '—'}</div>
           <div class="devotee-badges">${statusBadge(d.devoteeStatus)}${d.teamName ? ' ' + teamBadge(d.teamName) : ''}</div>
         </div>
@@ -591,7 +746,7 @@ async function openHistoryModal() {
   try {
     const history = await DB.getProfileHistory(AppState.currentDevoteeId);
     if (!history.length) { content.innerHTML = '<div class="empty-state" style="padding:2rem"><i class="fas fa-history"></i><p>No changes recorded yet</p></div>'; return; }
-    const labels = { name:'Name', mobile:'Mobile', chanting_rounds:'Chanting Rounds', kanthi:'Kanthi', gopi_dress:'Gopi Dress', team_name:'Department', sub_team:'Team', anniversary_date:'Anniversary', devotee_status:'Status', facilitator:'Facilitator', reference_by:'Reference', calling_by:'Calling By' };
+    const labels = { name:'Name', mobile:'Mobile', chanting_rounds:'Chanting Rounds', kanthi:'Kanthi', vaishnav_dress:'Vaishnav Dress', team_name:'Team', devotee_status:'Status', facilitator:'Facilitator', reference_by:'Reference', calling_by:'Calling By', gender:'Gender', marriage_anniversary:'Marriage Anniversary' };
     content.innerHTML = history.map(h => `
       <div class="history-item">
         <div class="history-field">${labels[h.field_name] || h.field_name}</div>

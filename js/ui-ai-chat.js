@@ -21,13 +21,21 @@ function _geminiUrl(model) {
   return `${_AI_PROXY_BASE}/v1beta/models/${model}:generateContent`;
 }
 
-// Show FAB only when authenticated; init drag on first show
-firebase.auth().onAuthStateChanged(user => {
-  const fab = document.getElementById('ai-fab');
-  if (!fab) return;
-  fab.style.display = user ? 'flex' : 'none';
-  if (user) _initAiFabDrag();
-});
+// Show FAB only when authenticated; init drag on first show.
+// Guard against the Firebase SDK not being ready yet at script-eval time
+// (avoids "firebase is not defined") — retry until it's available.
+(function _aiFabAuthInit() {
+  if (typeof firebase === 'undefined' || !firebase.auth) {
+    setTimeout(_aiFabAuthInit, 200);
+    return;
+  }
+  firebase.auth().onAuthStateChanged(user => {
+    const fab = document.getElementById('ai-fab');
+    if (!fab) return;
+    fab.style.display = user ? 'flex' : 'none';
+    if (user) _initAiFabDrag();
+  });
+})();
 
 function _initAiFabDrag() {
   const fab = document.getElementById('ai-fab');
@@ -245,7 +253,7 @@ async function _buildPrompt(question) {
     } catch (e) { console.warn('AI: activities fetch failed', e); }
   }
 
-  return `You are an AI assistant for "Sakhi Sang", an ISKCON community management app used by coordinators.
+  return `You are an AI assistant for "Advance Devotees", an ISKCON department-based management app used by department coordinators.
 Today: ${today}
 
 ${sections.join('\n\n')}

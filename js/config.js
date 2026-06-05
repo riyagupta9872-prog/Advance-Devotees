@@ -57,20 +57,26 @@ const AppState = {
   attendanceCandidates: {},
   sessionsCache: {},     // sessionId → session object
   isAttSevaDev: false,  // extra flag: can access live attendance of all teams (set by superAdmin per user)
+  // ── DELEGATION FLAGS ── per-user "super-admin lite" powers (set by superAdmin per user)
+  canAllTeamCalling: false,  // can submit/edit calling on behalf of any team
+  canAllTeamReports: false,  // can view reports across all teams
+  canManageAllTeams: false,  // full write access app-wide (lite super admin)
   // Auth
-  userRole: null,       // 'superAdmin' | 'teamAdmin' | 'serviceDevotee'
+  userRole: null,       // 'superAdmin' | 'deptCoordinator' | 'serviceDevotee'
   userTeam: null,       // team name for coordinators
+  userDept: null,       // department for deptAdmin ('ICF_Prji' | 'ICF_Mtg')
   userPosition: null,   // free-text position from user profile (e.g. 'Facilitator')
   userName: '',
   userId: null,
   profilePic: null,            // base64 string or null
 
   // ── MASTER FILTER STATE ─────────────────────────────────
-  // Single source of truth for context filters (Session / Team / Calling By).
+  // Single source of truth for context filters (Session / Dept / Team / Calling By).
   // Every tab's load* function reads from here. Per-tab content filters
   // (search boxes, status dropdowns) stay local.
   filters: {
     sessionId:     null,    // canonical session date 'YYYY-MM-DD'
+    dept:          '',       // '' = All depts | 'ICF_Prji' | 'ICF_Mtg'
     team:          '',       // '' = All teams
     callingBy:     '',       // '' = All callers
     period:        'session',// 'session'|'month'|'quarter'|'fy' (Reports-only)
@@ -110,6 +116,16 @@ function dispatchFilters(patch) {
   if (!f) return;
   const before = { ...f };
 
+  if (patch.dept !== undefined) {
+    const myDept = AppState.userDept || (typeof isCoordinator === 'function' && isCoordinator() ? AppState.userTeam : null);
+    const deptUnlocked = !myDept || (typeof isSuperAdmin === 'function' && isSuperAdmin()) || (typeof canChangeTeamFilter === 'function' && canChangeTeamFilter());
+    f.dept = deptUnlocked ? (patch.dept || '') : myDept;
+    // When dept changes, clear team if it no longer belongs to the new dept
+    if (f.dept && f.team && !getTeamsForDept(f.dept).includes(f.team)) {
+      f.team = '';
+    }
+  }
+
   if (patch.sessionId !== undefined) {
     f.sessionId = patch.sessionId || null;
     if (f.sessionId && !f.periodAnchor) f.periodAnchor = f.sessionId;
@@ -127,9 +143,26 @@ function dispatchFilters(patch) {
   if (patch.team !== undefined) {
     // Team-locked roles cannot change away from their assigned team — EXCEPT on
     // the Devotees tab, where every admin browses all teams' data. Reports and
-    // logging tabs stay team-scoped for teamAdmin.
-    const onDevoteesTab = AppState.currentTab === 'devotees';
-    if (AppState.userRole && AppState.userRole !== 'superAdmin' && AppState.userTeam && !onDevoteesTab) {
+    // logging tabs stay dept-scoped for deptCoordinator.
+    //
+    // Derive "are we on Devotees?" from the visible DOM panel (not from
+    // AppState.currentTab) — that variable drifts when the user navigates via
+    // browser back, history restore, or any path that toggles .tab-panel.active
+    // without going through switchTab. The drift was the root cause of
+    // coordinators seeing other teams' data on the dashboard.
+    let onDevoteesTab;
+    if (typeof document !== 'undefined') {
+      const activePanel = document.querySelector('.tab-panel.active');
+      onDevoteesTab = activePanel
+        ? activePanel.id === 'tab-devotees'
+        : AppState.currentTab === 'devotees';
+    } else {
+      onDevoteesTab = AppState.currentTab === 'devotees';
+    }
+    // Dept-locked unless: super admin, has a cross-dept permission flag, or
+    // currently on the Devotees tab (where every admin browses all depts).
+    const unlocked = isSuperAdmin() || canChangeTeamFilter() || onDevoteesTab;
+    if (AppState.userRole && AppState.userTeam && !unlocked) {
       f.team = AppState.userTeam;
     } else {
       f.team = patch.team || '';
@@ -147,7 +180,7 @@ function dispatchFilters(patch) {
 
   // Skip the event if nothing actually changed (mirrors from legacy widgets
   // can fire spuriously).
-  const changed = ['sessionId','team','callingBy','period','periodAnchor']
+  const changed = ['sessionId','dept','team','callingBy','period','periodAnchor']
     .some(k => before[k] !== f[k]);
   if (!changed) return;
 
@@ -157,13 +190,52 @@ function dispatchFilters(patch) {
 }
 
 // Convenience read helpers — used by tab code.
+function getFilterDept()      { return AppState.filters?.dept      || ''; }
 function getFilterTeam()      { return AppState.filters?.team      || ''; }
 function getFilterCallingBy() { return AppState.filters?.callingBy || ''; }
 function getFilterSessionId() { return AppState.filters?.sessionId || null; }
 
-// ── DEPARTMENTS LIST (single source of truth) ─────────
-const TEAMS = ['IGF', 'IYF', 'ICF_Mtg', 'ICF_Prji'];  // values stored in teamName field
-const DEPARTMENTS = TEAMS;  // alias — use DEPARTMENTS in new code
+// ── ROLE / PERMISSION HELPERS ──────────────────────────
+// These are the canonical checks. Use them everywhere instead of raw role
+// equality so the new delegation flags (canAllTeamCalling / canAllTeamReports
+// / canManageAllTeams) automatically apply.
+function isSuperAdmin()         { return AppState.userRole === 'superAdmin'; }
+function isDeptAdmin()          { return AppState.userRole === 'deptAdmin'; }   // kept for legacy compat
+function isCoordinator()        { return AppState.userRole === 'deptCoordinator' || AppState.userRole === 'teamAdmin'; }
+function isFacilitator()        { return AppState.userRole === 'serviceDevotee'; }
+function isAdminOrCoord()       { return isSuperAdmin() || isDeptAdmin() || isCoordinator(); }
+// canCrossTeamCalling = can submit calling for ANY dept (not just their own).
+function canCrossTeamCalling()  { return isSuperAdmin() || isDeptAdmin() || !!AppState.canAllTeamCalling || !!AppState.canManageAllTeams; }
+function canCrossTeamReports()  { return isSuperAdmin() || isDeptAdmin() || !!AppState.canAllTeamReports || !!AppState.canManageAllTeams; }
+function canCrossTeamManage()   { return isSuperAdmin() || !!AppState.canManageAllTeams; }
+// "Can the user freely change the Dept filter chip?"
+function canChangeTeamFilter()  { return canCrossTeamReports() || canCrossTeamManage() || canCrossTeamCalling(); }
+
+// ── DEPARTMENTS (single source of truth) ──────────────
+// Four departments — no sub-teams. Each department is the leaf unit.
+// Gender on a devotee auto-suggests department: Male → ICF_Prji | Female → ICF_Mtg
+// IGF / IYF are assigned manually.
+const DEPARTMENTS = {
+  ICF_Mtg:  [],
+  ICF_Prji: [],
+  IGF:      [],
+  IYF:      [],
+};
+const TEAMS = Object.keys(DEPARTMENTS); // ['ICF_Mtg', 'ICF_Prji', 'IGF', 'IYF']
+
+function getDeptForTeam(team) {
+  // Departments have no sub-teams; the team name IS the department.
+  return Object.keys(DEPARTMENTS).includes(team) ? team : '';
+}
+function getTeamsForDept(dept) {
+  // Departments have no sub-teams; return [dept] so dept-filter queries work.
+  return Object.keys(DEPARTMENTS).includes(dept) ? [dept] : [];
+}
+function getDeptForGender(gender) {
+  if (gender === 'Female') return 'ICF_Mtg';
+  if (gender === 'Male')   return 'ICF_Prji';
+  return '';
+}
 
 // ── ATTENDANCE TIME COLOUR ─────────────────────────────
 function attTimeStyle(markedAtISO) {
@@ -238,15 +310,6 @@ function isBirthdayWeek(dob) {
   }
   return false;
 }
-function isAnniversaryWeek(date) {
-  if (!date) return false;
-  const now = new Date();
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(now); d.setDate(now.getDate() + i);
-    if (date.slice(5) === `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`) return true;
-  }
-  return false;
-}
 
 // ── FORMAT HELPERS ─────────────────────────────────────
 // "Expected to be Serious" is stored verbatim in Firestore for backward
@@ -264,6 +327,33 @@ function statusBadge(s) {
   return `<span class="badge badge-expected">${label}</span>`;
 }
 function teamBadge(t) { return t ? `<span class="badge badge-team">${t}</span>` : ''; }
+
+// Inline tags shown right after a devotee's name across the app:
+//   © circle → has had a completed personal meeting with Prabhuji
+//   "New"    → devotee_status is "New Devotee"
+// Accepts either snake_case (from DevoteeCache) or camelCase (form/state) shapes.
+function nameTags(d) {
+  if (!d) return '';
+  const met    = (d.met_prabhuji === true) || (d.metPrabhuji === true);
+  const status = d.devotee_status || d.devoteeStatus || '';
+  const isNew  = /new/i.test(status);
+  let html = '';
+  if (met)   html += '<span class="met-badge" title="Met Prabhuji">C</span>';
+  if (isNew) html += '<span class="new-tag" title="New devotee">New</span>';
+  return html;
+}
+
+// Calling submission window state. OPEN is MANUAL (Session Config toggle), but
+// it AUTO-CLOSES at 11:59 PM on the calling date (Saturday night). An admin can
+// also close it early by turning the toggle off. Returns true only while the
+// window is effectively open.
+function isCallingWindowOpen(cfg) {
+  if (!cfg || cfg.callingWindowOpen !== true) return false;
+  const cd = cfg.callingDate;
+  if (!cd) return true;                       // manually open, no date to gate against
+  const deadline = new Date(cd + 'T23:59:59'); // Saturday 11:59 PM local
+  return new Date() <= deadline;
+}
 // contactIcons(mobile) → direct call/whatsapp links (single number).
 // contactIcons(mobile, { altMobile, devoteeId, name }) → if altMobile is also
 // present, the icons instead open the number-picker modal so the user can
@@ -400,19 +490,42 @@ window.addEventListener('popstate', () => {
   // If nothing was closed, let the browser actually navigate back next time
 });
 
-// ── DEVOTEE CACHE (90-second TTL) ────────────────────
+// ── DEVOTEE CACHE (5-minute TTL) ─────────────────────
+// Writes call DevoteeCache.bust() so edits show up instantly. The TTL only
+// controls passive refreshes, and the devotee list changes only a few times
+// per day — 5 min avoids re-fetching on every casual tab switch.
+//
+// bust() ALSO invalidates dependent caches (dashboard, care, calling-mgmt)
+// because all three derive their aggregates from devotee data. Without this
+// chain, a devotee edit would leave the dashboard showing stale numbers
+// until the user manually refreshed.
 const DevoteeCache = {
-  raw: [], stamp: 0, TTL: 90000,
+  raw: [], stamp: 0, TTL: 300000,
+  _inflight: null,   // deduplicates concurrent refresh calls → 1 Firestore read
   async refresh() {
-    const snap = await fdb.collection('devotees').where('isActive', '==', true).get();
-    this.raw = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    this.raw.sort((a, b) => a.name.localeCompare(b.name));
-    this.stamp = Date.now();
-    return this.raw;
+    if (this._inflight) return this._inflight;
+    this._inflight = (async () => {
+      try {
+        const snap = await fdb.collection('devotees').where('isActive', '==', true).get();
+        this.raw = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        this.raw.sort((a, b) => a.name.localeCompare(b.name));
+        this.stamp = Date.now();
+        return this.raw;
+      } finally {
+        this._inflight = null;
+      }
+    })();
+    return this._inflight;
   },
   async all(force = false) {
     if (force || Date.now() - this.stamp > this.TTL) return this.refresh();
     return this.raw;
   },
-  bust() { this.stamp = 0; }
+  bust() {
+    this.stamp = 0;
+    this._inflight = null;
+    if (typeof _bustDashboardCache === 'function') _bustDashboardCache();
+    if (typeof _bustCareCache      === 'function') _bustCareCache();
+    if (typeof _bustCMCache        === 'function') _bustCMCache();
+  }
 };
