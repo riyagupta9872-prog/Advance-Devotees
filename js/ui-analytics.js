@@ -3166,8 +3166,8 @@ window.loadMeetingsTab = loadMeetingsTab;
 const INTERACTION_LEVELS = {
   1: { name: 'HG Ram Atirapriya Prabhuji', abbr: 'Prabhuji (L1)', color: '#7c3aed', bg: '#f5f3ff' },
   2: { name: 'HG Sulakshana Sita Mataji',  abbr: 'Mataji (L2)',   color: '#0369a1', bg: '#eff6ff' },
-  3: { name: 'Naveena (Senior)',            abbr: 'Senior (L3)',   color: '#0f766e', bg: '#f0fdfa' },
-  4: { name: 'Team Coordinator',           abbr: 'Coordinator (L4)', color: '#0d2d5a', bg: '#eef3fb' },
+  3: { name: 'Overall Coordinator',        abbr: 'Overall Coord (L3)', color: '#0f766e', bg: '#f0fdfa' },
+  4: { name: 'Coordinator',                abbr: 'Coordinator (L4)', color: '#0d2d5a', bg: '#eef3fb' },
 };
 window.INTERACTION_LEVELS = INTERACTION_LEVELS;
 

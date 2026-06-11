@@ -568,8 +568,8 @@ const _CP_LEVELS = {
   0: { label: 'All Levels',                   abbr: 'All',        color: '#0d2d5a', bg: '#eef3fb' },
   1: { label: 'HG Ram Atirapriya Prabhuji',   abbr: 'L1 · Prabhuji', color: '#7c3aed', bg: '#f5f3ff' },
   2: { label: 'HG Sulakshana Sita Mataji',    abbr: 'L2 · Mataji',   color: '#0369a1', bg: '#eff6ff' },
-  3: { label: 'Naveena (Senior)',              abbr: 'L3 · Senior',   color: '#0f766e', bg: '#f0fdfa' },
-  4: { label: 'Team Coordinator',             abbr: 'L4 · Coord',    color: '#0d2d5a', bg: '#eef3fb' },
+  3: { label: 'Overall Coordinator',           abbr: 'L3 · Overall', color: '#0f766e', bg: '#f0fdfa' },
+  4: { label: 'Coordinator',                   abbr: 'L4 · Coord',    color: '#0d2d5a', bg: '#eef3fb' },
 };
 let _cpLevelFilter = 0;  // 0 = all levels
 
