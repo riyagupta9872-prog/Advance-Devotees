@@ -48,6 +48,20 @@ function importStatus(val) {
   return val || 'Expected to be Serious';
 }
 
+function importGender(val) {
+  const v = (val || '').toLowerCase().trim();
+  if (v === 'm' || v === 'male') return 'Male';
+  if (v === 'f' || v === 'female') return 'Female';
+  return null;
+}
+
+function importMaritalStatus(val) {
+  const v = (val || '').toLowerCase().trim();
+  if (v === 'married' || v === 'm') return 'Married';
+  if (v === 'unmarried' || v === 'single' || v === 'u') return 'Unmarried';
+  return null;
+}
+
 // ── EXCEL HELPER ──────────────────────────────────────
 function downloadExcel(rows, filename) {
   const ws = XLSX.utils.json_to_sheet(rows);
@@ -572,7 +586,7 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
 
     const CATS = [
       { label: 'Sr.No.',              cols: 1,                   bg: 'ECEFF1', fg: '37474F', subBg: 'CFD8DC' },
-      { label: 'Personal Identity',   cols: 8,                   bg: 'BBDEFB', fg: '0D47A1', subBg: 'E3F2FD' },
+      { label: 'Personal Identity',   cols: 6,                   bg: 'BBDEFB', fg: '0D47A1', subBg: 'E3F2FD' },
       { label: 'Team Management',     cols: teamMgmtCols.length, bg: 'FFF9C4', fg: '5D4037', subBg: 'FFFDE7' },
       { label: 'Professional',        cols: 2,                   bg: 'E1BEE7', fg: '4A148C', subBg: 'F3E5F5' },
       { label: 'Sadhana & Practices', cols: 9,                   bg: 'C8E6C9', fg: '1B5E20', subBg: 'E8F5E9' },
@@ -580,8 +594,8 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
       { label: 'Status',              cols: 1,                   bg: 'FFCDD2', fg: 'B71C1C', subBg: 'FFEBEE' },
     ];
 
-    // Personal Identity — 8 cols (includes Gender + Marriage Anniversary).
-    const personalCols = ['Name', 'Mobile', 'Alternate Mobile', 'D.O.B', 'Gender', 'Marriage Anniversary', 'Address', 'E-Mail'];
+    // Personal Identity — always 6 cols (Mobile + Alternate Mobile in both export and template).
+    const personalCols = ['Name', 'Mobile', 'Alternate Mobile', 'D.O.B', 'Address', 'E-Mail'];
     const socialCols = includeTeamCol
       ? ['Family Favourable', 'Hobbies', 'Skills', 'Date of Joining']
       : ['Family Favourable', 'Hobbies', 'Date of Joining'];
@@ -591,7 +605,7 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
       ...personalCols,
       ...teamMgmtCols,
       'Education', 'Profession',
-      'Chanting Rounds', 'Reading', 'Hearing', 'Tilak', 'Kanthi', 'Vaishnav Dress',
+      'Chanting Rounds', 'Reading', 'Hearing', 'Tilak', 'Kanthi', 'Gopi Dress',
       'Plays Instrument', 'Instrument Name', 'Wants Kirtan Class',
       ...socialCols,
       'Status',
@@ -601,10 +615,10 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
     // Column widths — index-mapped to COL_HEADERS so adding/removing cols stays in sync.
     const widthByHeader = {
       'Sr.No.': 6,
-      'Name': 24, 'Mobile': 13, 'Alternate Mobile': 14, 'D.O.B': 12, 'Gender': 10, 'Marriage Anniversary': 16, 'Address': 30, 'E-Mail': 26,
+      'Name': 24, 'Mobile': 13, 'Alternate Mobile': 14, 'D.O.B': 12, 'Address': 30, 'E-Mail': 26,
       'Team': 14, 'Facilitator': 22, 'Reference By': 22, 'Calling By': 22, 'Remarks': 30,
       'Education': 18, 'Profession': 18,
-      'Chanting Rounds': 10, 'Reading': 13, 'Hearing': 13, 'Tilak': 8, 'Kanthi': 8, 'Vaishnav Dress': 11,
+      'Chanting Rounds': 10, 'Reading': 13, 'Hearing': 13, 'Tilak': 8, 'Kanthi': 8, 'Gopi Dress': 11,
       'Plays Instrument': 13, 'Instrument Name': 18, 'Wants Kirtan Class': 14,
       'Family Favourable': 18, 'Hobbies': 22, 'Skills': 18, 'Date of Joining': 14,
       'Status': 22,
@@ -699,8 +713,6 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
         'Mobile':             { v: d.mobile || '',           s: dataCell() },
         'Alternate Mobile':   { v: d.mobileAlt || '',        s: dataCell() },
         'D.O.B':              { v: d.dob || '',              s: dataCell() },
-        'Gender':             { v: d.gender || '',           s: dataCell() },
-        'Marriage Anniversary': { v: d.marriageAnniversary || '', s: dataCell() },
         'Address':            { v: d.address || '',          s: dataCell({ left: true, wrap: true }) },
         'E-Mail':             { v: d.email || '',            s: dataCell({ left: true }) },
         'Team':               { v: d.teamName || '',         s: dataCell() },
@@ -715,7 +727,7 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
         'Hearing':            { v: d.hearing || '',          s: dataCell() },
         'Tilak':              { v: yn(d.tilak),              s: dataCell({ bg: d.tilak     ? 'C8E6C9' : d.tilak     === false ? 'FFCDD2' : null }) },
         'Kanthi':             { v: yn(d.kanthi),             s: dataCell({ bg: d.kanthi    ? 'C8E6C9' : d.kanthi    === false ? 'FFCDD2' : null }) },
-        'Vaishnav Dress':         { v: yn(d.vaishnavDress),          s: dataCell({ bg: d.vaishnavDress ? 'C8E6C9' : d.vaishnavDress === false ? 'FFCDD2' : null }) },
+        'Gopi Dress':         { v: yn(d.gopiDress),          s: dataCell({ bg: d.gopiDress ? 'C8E6C9' : d.gopiDress === false ? 'FFCDD2' : null }) },
         'Plays Instrument':   { v: d.playsInstrument || '',  s: dataCell({ bg: d.playsInstrument === 'Yes' ? 'C8E6C9' : d.playsInstrument === 'No' ? 'FFCDD2' : null }) },
         'Instrument Name':    { v: d.instrumentName || '',   s: dataCell({ left: true }) },
         'Wants Kirtan Class': { v: d.wantsKirtanClass || '', s: dataCell({ bg: d.wantsKirtanClass === 'Yes' ? 'C8E6C9' : d.wantsKirtanClass === 'No' ? 'FFCDD2' : null }) },
@@ -772,26 +784,24 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
       const samples = (devotees && devotees.length) ? devotees : [
         {
           name: 'Radha Kumari', mobile: '9876543210', mobileAlt: '9811122233',
-          dob: '2000-06-15', gender: 'Female', marriageAnniversary: '2022-11-20',
-          address: 'C-12, Sector 5, Noida', email: 'radha@example.com',
-          teamName: 'Rohini', facilitator: 'Anjali Devi Mtg',
-          referenceBy: 'Priya Devi', callingBy: 'Anjali Devi Mtg',
+          dob: '2000-06-15', address: 'C-12, Sector 5, Noida', email: 'radha@example.com',
+          teamName: 'Champaklata', facilitator: 'Anjali Mishra Mtg',
+          referenceBy: 'Priya Devi', callingBy: 'Anjali Mishra Mtg',
           education: 'B.Com', profession: 'Housewife',
           chantingRounds: 16, reading: 'Regular', hearing: 'Daily',
-          tilak: true, kanthi: true, vaishnavDress: false,
+          tilak: true, kanthi: true, gopiDress: false,
           familyFavourable: 'Yes', hobbies: 'Singing, Cooking', skills: 'Music, Art',
           dateOfJoining: '2023-04-02', devoteeStatus: 'Serious',
         },
         {
-          name: 'Arjun Das', mobile: '8765432109', mobileAlt: '',
-          dob: '1998-03-22', gender: 'Male', marriageAnniversary: '',
-          address: 'B-4, Govind Nagar, Mathura', email: '',
-          teamName: 'Vasudeva', facilitator: 'Suresh Prabhu',
-          referenceBy: '', callingBy: 'Suresh Prabhu',
+          name: 'Sita Devi', mobile: '8765432109', mobileAlt: '',
+          dob: '1998-03-22', address: 'B-4, Govind Nagar, Mathura', email: '',
+          teamName: 'Lalita', facilitator: 'Neha Bhandari',
+          referenceBy: '', callingBy: 'Neha Bhandari',
           education: '12th Pass', profession: 'Student',
           chantingRounds: 8, reading: 'Occasionally', hearing: 'Occasionally',
-          tilak: false, kanthi: false, vaishnavDress: false,
-          familyFavourable: 'Partial', hobbies: 'Sports', skills: 'Teaching',
+          tilak: false, kanthi: false, gopiDress: false,
+          familyFavourable: 'Partial', hobbies: 'Dance', skills: 'Teaching',
           dateOfJoining: '2024-01-07', devoteeStatus: 'Expected to be Serious',
         },
       ];
@@ -806,7 +816,7 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
       const teamList   = TEAMS.join('  |  ');
       const statusList = 'Expected to be Serious  |  Serious  |  Most Serious  |  New Devotee  |  Inactive';
       const instrRows = [
-        ['CONGREGATION FORUM – Devotee Import Template', '', ''],
+        ['ADVANCE DEVOTEES – Devotee Import Template', '', ''],
         ['', '', ''],
         ['HOW TO USE:', '', ''],
         ['1. Fill data in the "Devotees" sheet starting from Row 4', '', ''],
@@ -828,8 +838,6 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
         ['Mobile', '10-digit number, no spaces or dashes', 'Recommended'],
         ['Alternate Mobile', '10-digit number (only if a 2nd number is known)', 'Optional'],
         ['D.O.B', 'YYYY-MM-DD  (e.g. 2000-06-15)', 'Optional'],
-        ['Gender', 'Male  |  Female  |  Other  (determines dept: Male→ICF_Prji, Female→ICF_Mtg)', 'Optional'],
-        ['Marriage Anniversary', 'YYYY-MM-DD  (e.g. 2022-11-20)', 'Optional'],
         ['Address', 'Full address', 'Optional'],
         ['E-Mail', 'Valid email address', 'Optional'],
         ['Team', teamList, 'Required'],
@@ -843,7 +851,7 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
         ['Hearing',  'None  |  Occasionally  |  Regular  |  Daily', 'Optional'],
         ['Tilak',     'Yes  or  No', 'Optional'],
         ['Kanthi',    'Yes  or  No', 'Optional'],
-        ['Vaishnav Dress','Yes  or  No', 'Optional'],
+        ['Gopi Dress','Yes  or  No', 'Optional'],
         ['Family Favourable', 'Yes  |  Partial  |  No', 'Optional'],
         ['Hobbies', 'Free text — e.g. Singing, Dance, Cooking', 'Optional'],
         ['Skills',  'Free text — e.g. Teaching, Graphic Design', 'Optional'],
@@ -894,9 +902,9 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
     // Re-Import (Flat) sheet — simple flat sheet for lossless re-import.
     {
       const flatHeaders = [
-        'Name', 'Mobile', 'Alternate Mobile', 'Gender', 'Marriage Anniversary', 'Address', 'DOB',
-        'Date of Joining', 'Chanting Rounds', 'Kanthi', 'Vaishnav Dress', 'Tilak',
-        'Team', 'Department', 'Status', 'Facilitator', 'Reference', 'Calling By',
+        'Name', 'Mobile', 'Alternate Mobile', 'Address', 'DOB',
+        'Date of Joining', 'Chanting Rounds', 'Kanthi', 'Gopi Dress', 'Tilak',
+        'Team', 'Status', 'Facilitator', 'Reference', 'Calling By',
         'Education', 'Email', 'Profession', 'Family Favourable', 'Reading', 'Hearing',
         'Hobbies',
       ];
@@ -907,11 +915,10 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
         .sort((a, b) => (a.teamName || '').localeCompare(b.teamName || '') || (a.name || '').localeCompare(b.name || ''));
       sortedAll.forEach(d => {
         flatRows.push([
-          d.name || '', d.mobile || '', d.mobileAlt || '',
-          d.gender || '', d.marriageAnniversary || '', d.address || '', d.dob || '',
+          d.name || '', d.mobile || '', d.mobileAlt || '', d.address || '', d.dob || '',
           d.dateOfJoining || '', d.chantingRounds || 0,
-          yn(d.kanthi), yn(d.vaishnavDress), yn(d.tilak),
-          d.teamName || '', d.department || '', d.devoteeStatus || '',
+          yn(d.kanthi), yn(d.gopiDress), yn(d.tilak),
+          d.teamName || '', d.devoteeStatus || '',
           d.facilitator || '', d.referenceBy || '', d.callingBy || '',
           d.education || '', d.email || '', d.profession || '', d.familyFavourable || '',
           d.reading || '', d.hearing || '', d.hobbies || '',
@@ -926,7 +933,7 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
     {
       const ovCats = [
         { label: 'Sr.No.',              cols: 1,  bg: 'ECEFF1', fg: '37474F', subBg: 'CFD8DC' },
-        { label: 'Personal Identity',   cols: 8,  bg: 'BBDEFB', fg: '0D47A1', subBg: 'E3F2FD' },
+        { label: 'Personal Identity',   cols: 6,  bg: 'BBDEFB', fg: '0D47A1', subBg: 'E3F2FD' },
         { label: 'Team Management',     cols: 4,  bg: 'FFF9C4', fg: '5D4037', subBg: 'FFFDE7' },
         { label: 'Professional',        cols: 2,  bg: 'E1BEE7', fg: '4A148C', subBg: 'F3E5F5' },
         { label: 'Sadhana & Practices', cols: 9,  bg: 'C8E6C9', fg: '1B5E20', subBg: 'E8F5E9' },
@@ -935,10 +942,10 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
       ];
       const ovHeaders = [
         'Sr.No.',
-        'Name', 'Mobile', 'Alternate Mobile', 'D.O.B', 'Gender', 'Marriage Anniversary', 'Address', 'E-Mail',
+        'Name', 'Mobile', 'Alternate Mobile', 'D.O.B', 'Address', 'E-Mail',
         'Team', 'Facilitator', 'Reference By', 'Calling By',
         'Education', 'Profession',
-        'Chanting Rounds', 'Reading', 'Hearing', 'Tilak', 'Kanthi', 'Vaishnav Dress',
+        'Chanting Rounds', 'Reading', 'Hearing', 'Tilak', 'Kanthi', 'Gopi Dress',
         'Plays Instrument', 'Instrument Name', 'Wants Kirtan Class',
         'Family Favourable', 'Hobbies', 'Skills', 'Date of Joining',
         'Status',
@@ -986,8 +993,6 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
           'Mobile':            { v: d.mobile || '',           s: dataCell() },
           'Alternate Mobile':  { v: d.mobileAlt || '',        s: dataCell() },
           'D.O.B':             { v: d.dob || '',              s: dataCell() },
-          'Gender':            { v: d.gender || '',           s: dataCell() },
-          'Marriage Anniversary': { v: d.marriageAnniversary || '', s: dataCell() },
           'Address':           { v: d.address || '',          s: dataCell({ left: true, wrap: true }) },
           'E-Mail':            { v: d.email || '',            s: dataCell({ left: true }) },
           'Team':              { v: d.teamName || '',         s: dataCell({ bold: true }) },
@@ -1002,7 +1007,7 @@ async function _buildAndDownloadDevoteeWorkbook({ devotees, includeTeamCol, file
           'Hearing':           { v: d.hearing || '',          s: dataCell() },
           'Tilak':              { v: yn(d.tilak),              s: dataCell({ bg: d.tilak     ? 'C8E6C9' : d.tilak     === false ? 'FFCDD2' : null }) },
           'Kanthi':             { v: yn(d.kanthi),             s: dataCell({ bg: d.kanthi    ? 'C8E6C9' : d.kanthi    === false ? 'FFCDD2' : null }) },
-          'Vaishnav Dress':         { v: yn(d.vaishnavDress),          s: dataCell({ bg: d.vaishnavDress ? 'C8E6C9' : d.vaishnavDress === false ? 'FFCDD2' : null }) },
+          'Gopi Dress':         { v: yn(d.gopiDress),          s: dataCell({ bg: d.gopiDress ? 'C8E6C9' : d.gopiDress === false ? 'FFCDD2' : null }) },
           'Plays Instrument':   { v: d.playsInstrument || '',  s: dataCell({ bg: d.playsInstrument === 'Yes' ? 'C8E6C9' : d.playsInstrument === 'No' ? 'FFCDD2' : null }) },
           'Instrument Name':    { v: d.instrumentName || '',   s: dataCell({ left: true }) },
           'Wants Kirtan Class': { v: d.wantsKirtanClass || '', s: dataCell({ bg: d.wantsKirtanClass === 'Yes' ? 'C8E6C9' : d.wantsKirtanClass === 'No' ? 'FFCDD2' : null }) },
@@ -1059,19 +1064,18 @@ function downloadImportTemplate() {
   //
   //  Personal Identity → Team Management → Professional → Sadhana &
   //  Practices (incl. Kirtan questions) → Social & Family → Status
-  const teams    = TEAMS;
   const statuses = ['Expected to be Serious','Serious','Most Serious','New Devotee','Inactive'];
 
   const headers = [
     // Personal Identity
-    'Name', 'Mobile', 'Alternate Mobile', 'DOB', 'Email', 'Address',
+    'Name', 'Mobile', 'Alternate Mobile', 'DOB', 'Gender', 'Marital Status', 'Marriage Anniversary', 'Email', 'Address',
     // Team Management
     'Team', 'Facilitator', 'Reference', 'Calling By',
     // Professional
     'Education', 'Profession',
     // Sadhana & Practices  (Kirtan questions are part of this section)
     'Chanting Rounds', 'Reading', 'Hearing',
-    'Tilak', 'Kanthi', 'Vaishnav Dress',
+    'Tilak', 'Kanthi', 'Gopi Dress',
     'Wants Kirtan Class', 'Instrument',
     // Social & Family
     'Family Favourable', 'Hobbies', 'Skills', 'Date of Joining',
@@ -1079,8 +1083,8 @@ function downloadImportTemplate() {
     'Status',
   ];
   const sample1 = [
-    'Radha Devi', '9876543210', '9811122233', '2000-06-15', 'radha@example.com', 'C-12, Sector 5, Noida',
-    'Rohini', 'Anjali Devi Mtg', 'Priya Devi', 'Anjali Devi Mtg',
+    'Radha Kumari', '9876543210', '9811122233', '2000-06-15', 'Female', 'Married', '2019-11-21', 'radha@example.com', 'C-12, Sector 5, Noida',
+    'Champaklata', 'Anjali Mishra Mtg', 'Priya Devi', 'Anjali Mishra Mtg',
     'B.Com', 'Housewife',
     '16', 'Regular', 'Daily',
     'Yes', 'Yes', 'No',
@@ -1089,8 +1093,8 @@ function downloadImportTemplate() {
     'Serious',
   ];
   const sample2 = [
-    'Arjun Das', '8765432109', '', '1998-03-22', '', 'B-4, Govind Nagar, Mathura',
-    'Vasudeva', 'Suresh Prabhu', '', 'Suresh Prabhu',
+    'Sita Devi', '8765432109', '', '1998-03-22', 'Female', 'Unmarried', '', '', 'B-4, Govind Nagar, Mathura',
+    'Lalita', 'Neha Bhandari', '', 'Neha Bhandari',
     '12th Pass', 'Student',
     '8', 'Occasionally', 'Occasionally',
     'No', 'No', 'No',
@@ -1102,7 +1106,7 @@ function downloadImportTemplate() {
   const wsData = XLSX.utils.aoa_to_sheet([headers, sample1, sample2]);
   // Column widths follow the same order as headers above.
   wsData['!cols'] = [
-    { wch: 24 }, { wch: 13 }, { wch: 14 }, { wch: 12 }, { wch: 24 }, { wch: 30 },
+    { wch: 24 }, { wch: 13 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 13 }, { wch: 18 }, { wch: 24 }, { wch: 30 },
     { wch: 14 }, { wch: 22 }, { wch: 22 }, { wch: 22 },
     { wch: 16 }, { wch: 18 },
     { wch: 14 }, { wch: 14 }, { wch: 14 },
@@ -1121,10 +1125,10 @@ function downloadImportTemplate() {
     ['3. Save and upload using the Import Excel button', '', ''],
     ['', '', ''],
     ['COLUMNS ARE GROUPED BY SECTION (in order):', '', ''],
-    ['Personal Identity:', 'Name, Mobile, Alternate Mobile, DOB, Email, Address', ''],
+    ['Personal Identity:', 'Name, Mobile, Alternate Mobile, DOB, Gender, Marital Status, Marriage Anniversary, Email, Address', ''],
     ['Team Management:',  'Team, Facilitator, Reference, Calling By', ''],
     ['Professional:',     'Education, Profession', ''],
-    ['Sadhana & Practices:', 'Chanting Rounds, Reading, Hearing, Tilak, Kanthi, Vaishnav Dress, Wants Kirtan Class, Instrument', ''],
+    ['Sadhana & Practices:', 'Chanting Rounds, Reading, Hearing, Tilak, Kanthi, Gopi Dress, Wants Kirtan Class, Instrument', ''],
     ['Social & Family:',  'Family Favourable, Hobbies, Skills, Date of Joining', ''],
     ['Status:',           'Status', ''],
     ['', '', ''],
@@ -1133,9 +1137,13 @@ function downloadImportTemplate() {
     ['Mobile', '10-digit number, no spaces or dashes', 'Recommended'],
     ['Alternate Mobile', '10-digit number (only if a 2nd number is known)', 'Optional'],
     ['DOB', 'YYYY-MM-DD  (e.g. 2000-06-15)', 'Optional'],
+    ['Gender', 'Male  |  Female', 'Optional'],
+    ['Marital Status', 'Married  |  Unmarried', 'Optional'],
+    ['Marriage Anniversary', 'YYYY-MM-DD  (e.g. 2019-11-21) — only if married', 'Optional'],
     ['Email', 'Valid email address', 'Optional'],
     ['Address', 'Full address', 'Optional'],
-    ['Team', teams.join('  |  '), 'Optional'],
+    ['Team', 'Free text — your Sakhi Sang team name (e.g. Champaklata, Lalita…)', 'Optional'],
+    ['', '(Department is auto-assigned from Gender + Marital Status — do not enter it)', ''],
     ['Facilitator', 'Name of facilitator (must match a devotee in DB)', 'Optional'],
     ['Reference', 'Name of referring devotee', 'Optional'],
     ['Calling By', 'Name of caller (must match a devotee in DB)', 'Optional'],
@@ -1146,7 +1154,7 @@ function downloadImportTemplate() {
     ['Hearing',  'None  |  Occasionally  |  Regular  |  Daily', 'Optional'],
     ['Tilak',     'Yes  or  No', 'Optional'],
     ['Kanthi',    'Yes  or  No', 'Optional'],
-    ['Vaishnav Dress','Yes  or  No', 'Optional'],
+    ['Gopi Dress','Yes  or  No', 'Optional'],
     ['Wants Kirtan Class', 'Yes  or  No  — interested in attending kirtan class', 'Optional'],
     ['Instrument', 'Free text — instrument played (e.g. Harmonium, Mridanga, Karatal)', 'Optional'],
     ['Family Favourable', 'Yes  |  Partial  |  No', 'Optional'],
@@ -1170,9 +1178,10 @@ function downloadImportTemplate() {
 // ── IMPORT FIELD DEFINITIONS ──────────────────────────
 const IMPORT_FIELDS = [
   { key: 'name',               label: 'Name *',                  aliases: ['Name','name','Full Name','Devotee Name','NAAM'] },
-  { key: 'gender',             label: 'Gender',                  aliases: ['Gender','gender','GENDER','Sex','sex'] },
   { key: 'dob',                label: 'Date of Birth',           aliases: ['DOB','D.O.B','Date of Birth','Birth Date','dob','D.O.B.','DOB (DD/MM/YYYY)'] },
-  { key: 'marriageAnniversary',label: 'Marriage Anniversary',    aliases: ['Marriage Anniversary','Anniversary','marriage anniversary','Marriage Anniv','DOA','D.O.A','Date of Anniversary'] },
+  { key: 'gender',             label: 'Gender',                  aliases: ['Gender','gender','GENDER','Sex'] },
+  { key: 'maritalStatus',      label: 'Marital Status',          aliases: ['Marital Status','marital status','MARITAL STATUS','Marital'] },
+  { key: 'marriageAnniversary', label: 'Marriage Anniversary',   aliases: ['Marriage Anniversary','Anniversary','Wedding Anniversary','marriage anniversary','Marriage Date'] },
   { key: 'mobile',             label: 'Mobile',                  aliases: ['Mobile','Contact','Phone','Mobile Number','Mobile (10 digits)','Contact Number','Mob','Ph No','mob no','contact'] },
   { key: 'mobileAlt',          label: 'Alternate Mobile',        aliases: ['Alternate Mobile','Alt Mobile','Mobile 2','Alt Number','Alternate Number','Second Mobile','Secondary Mobile','Mob 2','alt mobile','Alternate Contact'] },
   { key: 'address',            label: 'Residential Address',     aliases: ['Address','address','Addr','ADDRESS','Residential Address'] },
@@ -1184,7 +1193,7 @@ const IMPORT_FIELDS = [
   { key: 'hearing',            label: 'Hearing',                 aliases: ['Hearing','hearing','HEARING'] },
   { key: 'tilak',              label: 'Tilak (Y/N)',             aliases: ['Tilak','tilak','TILAK'] },
   { key: 'kanthi',             label: 'Kanthi (Y/N)',            aliases: ['Kanthi','kanthi','KANTHI'] },
-  { key: 'vaishnavDress',      label: 'Vaishnav Dress (Y/N)',    aliases: ['Vaishnav Dress','Gopi Dress','Gopi','GOPI','vaishnav dress','gopi dress'] },
+  { key: 'gopiDress',          label: 'Gopi Dress (Y/N)',        aliases: ['Gopi Dress','Gopi','GOPI','gopi dress','Gopi dress'] },
   { key: 'wantsKirtanClass',   label: 'Wants Kirtan Class (Y/N)', aliases: ['Wants Kirtan Class','Wants Kirtan','Kirtan Class','Kirtan','wants_kirtan_class','wants kirtan'] },
   { key: 'playsInstrument',    label: 'Plays Instrument (Y/N)',  aliases: ['Plays Instrument','plays instrument','Plays Instr','playsInstrument','Plays Instrument?','Plays'] },
   { key: 'instrumentName',     label: 'Instrument Name',         aliases: ['Instrument','Instrument Name','instrument','Instrument played','Music Instrument','Instrument played'] },
@@ -1192,7 +1201,7 @@ const IMPORT_FIELDS = [
   { key: 'familyParticipants', label: 'Family Members in Class', aliases: ['Family in Class','Family Participants','Members in Class','familyParticipants','Family Members in Class'] },
   { key: 'familyFavourable',   label: 'Favorable to Devotion',   aliases: ['Family Favourable','Family Favorable','Family','family favourable','Family Favourable?','Favorable to Devotion'] },
   { key: 'hobbies',            label: 'Hobbies & Interests',     aliases: ['Hobbies','hobbies','Hobby','HOBBIES','Hobbies & Interests'] },
-  { key: 'teamName',           label: 'Team',                    aliases: ['Team','Team Wise','Team Name','TEAM','Group','team','Team wise','Teamwise'] },
+  { key: 'team',               label: 'Team',                    aliases: ['Team','Team Wise','Team Name','TEAM','Group','team','Team wise','Teamwise'] },
   { key: 'devoteeStatus',      label: 'Devotee Status',          aliases: ['Status','Devotee Status','Dev Status','status','ETS','devotee status'] },
   { key: 'dateOfJoining',      label: 'Date of Joining',         aliases: ['Date of Joining','Date Of Joining','Joining Date','DOJ','Date of joining'] },
   { key: 'referenceBy',        label: 'Reference By',            aliases: ['Reference','Ref','Reference By','Referred By','Ref-2','ref','Ref 2','reference'] },
@@ -1607,11 +1616,12 @@ async function importWithMapping(rows, colMap, mode = 'add') {
         const mobileAlt = String(getField(row, 'mobileAlt')).replace(/\D/g, '').slice(0, 10);
         const payload = {
           name,
-          gender:              String(getField(row, 'gender')) || null,
           mobile:              mobile || null,
           mobileAlt:           mobileAlt || null,
           address:             String(getField(row, 'address')) || null,
           dob:                 importDate(getField(row, 'dob')) || null,
+          gender:              importGender(getField(row, 'gender')),
+          maritalStatus:       importMaritalStatus(getField(row, 'maritalStatus')),
           marriageAnniversary: importDate(getField(row, 'marriageAnniversary')) || null,
           email:               String(getField(row, 'email')) || null,
           education:           String(getField(row, 'education')) || null,
@@ -1621,7 +1631,7 @@ async function importWithMapping(rows, colMap, mode = 'add') {
           hearing:             String(getField(row, 'hearing')) || null,
           tilak:               importYN(getField(row, 'tilak')),
           kanthi:              importYN(getField(row, 'kanthi')),
-          vaishnavDress:           importYN(getField(row, 'vaishnavDress')),
+          gopiDress:           importYN(getField(row, 'gopiDress')),
           wantsKirtanClass:    (() => { const v = importYN(getField(row, 'wantsKirtanClass')); const raw = String(getField(row, 'wantsKirtanClass')).trim(); return raw === '' ? null : (v ? 'Yes' : 'No'); })(),
           playsInstrument:     (() => { const v = importYN(getField(row, 'playsInstrument')); const raw = String(getField(row, 'playsInstrument')).trim(); return raw === '' ? null : (v ? 'Yes' : 'No'); })(),
           instrumentName:      String(getField(row, 'instrumentName')) || null,
@@ -1629,15 +1639,19 @@ async function importWithMapping(rows, colMap, mode = 'add') {
           familyParticipants:  isNaN(rawFamP) ? null : rawFamP,
           familyFavourable:    String(getField(row, 'familyFavourable')) || null,
           hobbies:             String(getField(row, 'hobbies')) || null,
-          teamName:            String(getField(row, 'teamName')) || null,
+          team:                String(getField(row, 'team')) || null,
           devoteeStatus:       importStatus(getField(row, 'devoteeStatus')),
           dateOfJoining:       importDate(getField(row, 'dateOfJoining')) || null,
           referenceBy:         String(getField(row, 'referenceBy')) || null,
           facilitator:         String(getField(row, 'facilitator')) || null,
           callingBy:           String(getField(row, 'callingBy')) || null,
-          department:          (() => { const g = String(getField(row, 'gender')); const t = String(getField(row, 'teamName')); return getDeptForGender(g) || getDeptForTeam(t) || null; })(),
           isActive: true, inactivityFlag: false, updatedAt: TS(),
         };
+        // Department (teamName) is auto-derived from Gender + Marital Status.
+        // Only set it when computable so an update with blank gender/marital
+        // columns doesn't wipe out an existing devotee's department.
+        const computedDept = computeDepartment(payload.gender, payload.maritalStatus);
+        if (computedDept) payload.teamName = computedDept;
         Object.keys(payload).forEach(k => { if (payload[k] === 'null' || payload[k] === '') payload[k] = null; });
 
         const existId = resolveExistId(name, mobile);
@@ -1913,24 +1927,16 @@ function downloadSkipReport() {
 // New devotees (created this month) get a yellow highlight on their name cell.
 // Columns: Sno | Name | Mobile | Calling By | [CS | AT per session] | Total AT
 const _MONTHLY_TEAM_PALETTES = {
-  // ICF_Prji (male teams) — green family
-  'Vasudeva':       ['C8E6C9','A5D6A7','81C784','66BB6A','4CAF50','388E3C'],
-  'Sankarshan':     ['DCEDC8','C5E1A5','AED581','9CCC65','7CB342','558B2F'],
-  'Pradyumna':      ['F0F4C3','E6EE9C','DCE775','D4E157','C0CA33','9E9D24'],
-  'Anirudha':       ['B2EBF2','80DEEA','4DD0E1','26C6DA','00ACC1','00838F'],
-  'Panchaal':       ['B3E5FC','81D4FA','4FC3F7','29B6F6','039BE5','0277BD'],
-  'Other ICF_Prji': ['ECEFF1','CFD8DC','B0BEC5','90A4AE','78909C','546E7A'],
-  // ICF_Mtg (female teams) — warm/pink family
-  'Rohini':         ['FFDCE5','FFB3C6','FF85A1','FF5C8A','E91E63','C2185B'],
-  'Rukmini':        ['F8BBD0','F48FB1','F06292','EC407A','D81B60','AD1457'],
-  'Kalindi':        ['E1BEE7','CE93D8','BA68C8','AB47BC','8E24AA','6A1B9A'],
-  'Satyabhama':     ['EDE7F6','D1C4E9','B39DDB','9575CD','7E57C2','512DA8'],
-  'Jamvanti':       ['FFE0B2','FFCC80','FFB74D','FFA726','FB8C00','E65100'],
-  'Lakshmana':      ['FFF9C4','FFF59D','FFF176','FFEE58','FDD835','F9A825'],
-  'Kaushal':        ['FFCCBC','FFAB91','FF8A65','FF7043','F4511E','BF360C'],
-  'Bhadra':         ['FFCDD2','EF9A9A','E57373','EF5350','E53935','B71C1C'],
-  'Panchaali':      ['FCE4EC','F8BBD0','F48FB1','F06292','E91E63','880E4F'],
-  'Other ICF_Mtg':  ['F5F5F5','EEEEEE','E0E0E0','BDBDBD','9E9E9E','757575'],
+  'Champaklata': ['C8E6C9','A5D6A7','81C784','66BB6A','4CAF50','388E3C'],
+  'Chitralekha': ['BBDEFB','90CAF9','64B5F6','42A5F5','1E88E5','1565C0'],
+  'Indulekha':   ['E1BEE7','CE93D8','BA68C8','AB47BC','8E24AA','6A1B9A'],
+  'Lalita':      ['FFE0B2','FFCC80','FFB74D','FFA726','FB8C00','E65100'],
+  'Nilachal':    ['B2EBF2','80DEEA','4DD0E1','26C6DA','00ACC1','00838F'],
+  'Other':       ['F5F5F5','EEEEEE','E0E0E0','BDBDBD','9E9E9E','757575'],
+  'Rangadevi':   ['F8BBD0','F48FB1','F06292','EC407A','D81B60','AD1457'],
+  'Sudevi':      ['FFF9C4','FFF59D','FFF176','FFEE58','FDD835','F9A825'],
+  'Tungavidya':  ['FFCDD2','EF9A9A','E57373','EF5350','E53935','B71C1C'],
+  'Vishakha':    ['C5CAE9','9FA8DA','7986CB','5C6BC0','3949AB','283593'],
 };
 
 function _monthBounds(yearMonth) {
@@ -2193,7 +2199,7 @@ async function _doExportOverallReport(bounds, prevBounds, prevLabel, filename) {
   });
   sumRows.push([{ v: 'Total', s: hdrS }, '', '', numCell(totalAtt, 'B2EBF2')]);
 
-  sumRows.push([], [{ v: 'ACTIVITIES BY DEPARTMENT', s: hdrSub }, '', '', '', '', '']);
+  sumRows.push([], [{ v: 'ACTIVITIES BY TEAM', s: hdrSub }, '', '', '', '', '']);
   sumRows.push([
     { v: 'Team', s: hdrS }, { v: 'Attendance', s: hdrS }, { v: 'Books', s: hdrS },
     { v: 'Registrations', s: hdrS }, { v: 'Services', s: hdrS }, { v: 'Donations (₹)', s: hdrS },

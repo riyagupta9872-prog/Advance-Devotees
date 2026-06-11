@@ -23,21 +23,33 @@ fdb.enablePersistence({ synchronizeTabs: true }).catch(err => {
 
 // Recover from Firestore SDK internal assertion errors (known bug with multi-tab persistence).
 // When this happens the SDK is in an unrecoverable state — a reload is the only fix.
+// The error can surface three ways: unhandledrejection, window error, or console.error
+// (when Firebase catches it internally and logs it without re-throwing). All three covered.
+let _reloadScheduled = false;
 function _isFirestoreAssertionError(msg) {
   return typeof msg === 'string' && msg.includes('INTERNAL ASSERTION FAILED');
 }
+function _scheduleReload() {
+  if (_reloadScheduled) return;
+  _reloadScheduled = true;
+  console.warn('[Advance Devotees] Firestore internal error — reloading to recover');
+  setTimeout(() => location.reload(), 800);
+}
 window.addEventListener('unhandledrejection', e => {
-  if (_isFirestoreAssertionError(e.reason?.message)) {
-    console.warn('[Advance Devotees] Firestore internal error — reloading to recover');
-    setTimeout(() => location.reload(), 600);
-  }
+  if (_isFirestoreAssertionError(e.reason?.message)) _scheduleReload();
 });
 window.addEventListener('error', e => {
-  if (_isFirestoreAssertionError(e.message)) {
-    console.warn('[Advance Devotees] Firestore internal error — reloading to recover');
-    setTimeout(() => location.reload(), 600);
-  }
+  if (_isFirestoreAssertionError(e.message)) _scheduleReload();
 });
+// Firebase sometimes catches the error internally and logs it via console.error
+// without re-throwing — intercept that path too.
+const _origConsoleError = console.error.bind(console);
+console.error = function (...args) {
+  _origConsoleError(...args);
+  const first = args[0];
+  const msg = typeof first === 'string' ? first : (first?.message || '');
+  if (_isFirestoreAssertionError(msg)) _scheduleReload();
+};
 
 // ── APP STATE ─────────────────────────────────────────
 const AppState = {
@@ -62,22 +74,22 @@ const AppState = {
   canAllTeamReports: false,  // can view reports across all teams
   canManageAllTeams: false,  // full write access app-wide (lite super admin)
   // Auth
-  userRole: null,       // 'superAdmin' | 'deptCoordinator' | 'serviceDevotee'
-  userTeam: null,       // team name for coordinators
-  userDept: null,       // department for deptAdmin ('ICF_Prji' | 'ICF_Mtg')
+  userRole: null,       // 'superAdmin' | 'deptAdmin' | 'deptCoordinator' | 'serviceDevotee'
+  userTeam: null,       // department name for coordinators
+  userDept: null,       // department name for deptAdmin
   userPosition: null,   // free-text position from user profile (e.g. 'Facilitator')
   userName: '',
   userId: null,
   profilePic: null,            // base64 string or null
 
   // ── MASTER FILTER STATE ─────────────────────────────────
-  // Single source of truth for context filters (Session / Dept / Team / Calling By).
+  // Single source of truth for context filters (Session / Dept / Calling By).
   // Every tab's load* function reads from here. Per-tab content filters
   // (search boxes, status dropdowns) stay local.
   filters: {
     sessionId:     null,    // canonical session date 'YYYY-MM-DD'
-    dept:          '',       // '' = All depts | 'ICF_Prji' | 'ICF_Mtg'
-    team:          '',       // '' = All teams
+    dept:          '',       // '' = All departments
+    team:          '',       // '' = All departments (mirrors dept in flat structure)
     callingBy:     '',       // '' = All callers
     period:        'session',// 'session'|'month'|'quarter'|'fy' (Reports-only)
     periodAnchor:  null,    // 'YYYY-MM-DD' anchor for period aggregation
@@ -141,8 +153,8 @@ function dispatchFilters(patch) {
     }
   }
   if (patch.team !== undefined) {
-    // Team-locked roles cannot change away from their assigned team — EXCEPT on
-    // the Devotees tab, where every admin browses all teams' data. Reports and
+    // Dept-locked roles cannot change away from their assigned department — EXCEPT on
+    // the Devotees tab, where every admin browses all departments' data. Reports and
     // logging tabs stay dept-scoped for deptCoordinator.
     //
     // Derive "are we on Devotees?" from the visible DOM panel (not from
@@ -159,8 +171,8 @@ function dispatchFilters(patch) {
     } else {
       onDevoteesTab = AppState.currentTab === 'devotees';
     }
-    // Dept-locked unless: super admin, has a cross-dept permission flag, or
-    // currently on the Devotees tab (where every admin browses all depts).
+    // Team-locked unless: super admin, has a cross-team permission flag, or
+    // currently on the Devotees tab (where every admin browses all teams).
     const unlocked = isSuperAdmin() || canChangeTeamFilter() || onDevoteesTab;
     if (AppState.userRole && AppState.userTeam && !unlocked) {
       f.team = AppState.userTeam;
@@ -190,7 +202,6 @@ function dispatchFilters(patch) {
 }
 
 // Convenience read helpers — used by tab code.
-function getFilterDept()      { return AppState.filters?.dept      || ''; }
 function getFilterTeam()      { return AppState.filters?.team      || ''; }
 function getFilterCallingBy() { return AppState.filters?.callingBy || ''; }
 function getFilterSessionId() { return AppState.filters?.sessionId || null; }
@@ -200,21 +211,23 @@ function getFilterSessionId() { return AppState.filters?.sessionId || null; }
 // equality so the new delegation flags (canAllTeamCalling / canAllTeamReports
 // / canManageAllTeams) automatically apply.
 function isSuperAdmin()         { return AppState.userRole === 'superAdmin'; }
-function isDeptAdmin()          { return AppState.userRole === 'deptAdmin'; }   // kept for legacy compat
+function isDeptAdmin()          { return AppState.userRole === 'deptAdmin'; }
 function isCoordinator()        { return AppState.userRole === 'deptCoordinator' || AppState.userRole === 'teamAdmin'; }
 function isFacilitator()        { return AppState.userRole === 'serviceDevotee'; }
 function isAdminOrCoord()       { return isSuperAdmin() || isDeptAdmin() || isCoordinator(); }
-// canCrossTeamCalling = can submit calling for ANY dept (not just their own).
-function canCrossTeamCalling()  { return isSuperAdmin() || isDeptAdmin() || !!AppState.canAllTeamCalling || !!AppState.canManageAllTeams; }
-function canCrossTeamReports()  { return isSuperAdmin() || isDeptAdmin() || !!AppState.canAllTeamReports || !!AppState.canManageAllTeams; }
+// canCrossTeamCalling = can submit calling for ANY team (not just their own).
+// True for super admin, anyone with canAllTeamCalling, or canManageAllTeams.
+function canCrossTeamCalling()  { return isSuperAdmin() || !!AppState.canAllTeamCalling || !!AppState.canManageAllTeams; }
+function canCrossTeamReports()  { return isSuperAdmin() || !!AppState.canAllTeamReports || !!AppState.canManageAllTeams; }
 function canCrossTeamManage()   { return isSuperAdmin() || !!AppState.canManageAllTeams; }
-// "Can the user freely change the Dept filter chip?"
+// "Can the user freely change the Team filter chip?" — yes if they can see
+// reports for all teams OR manage all teams OR are super admin.
 function canChangeTeamFilter()  { return canCrossTeamReports() || canCrossTeamManage() || canCrossTeamCalling(); }
 
 // ── DEPARTMENTS (single source of truth) ──────────────
-// Four departments — no sub-teams. Each department is the leaf unit.
-// Gender on a devotee auto-suggests department: Male → ICF_Prji | Female → ICF_Mtg
-// IGF / IYF are assigned manually.
+// Flat departments — no sub-teams. Each devotee/coordinator belongs to
+// exactly one department, auto-determined by gender + marital status
+// (see computeDepartment()).
 const DEPARTMENTS = {
   ICF_Mtg:  [],
   ICF_Prji: [],
@@ -224,16 +237,22 @@ const DEPARTMENTS = {
 const TEAMS = Object.keys(DEPARTMENTS); // ['ICF_Mtg', 'ICF_Prji', 'IGF', 'IYF']
 
 function getDeptForTeam(team) {
-  // Departments have no sub-teams; the team name IS the department.
   return Object.keys(DEPARTMENTS).includes(team) ? team : '';
 }
 function getTeamsForDept(dept) {
-  // Departments have no sub-teams; return [dept] so dept-filter queries work.
   return Object.keys(DEPARTMENTS).includes(dept) ? [dept] : [];
 }
-function getDeptForGender(gender) {
-  if (gender === 'Female') return 'ICF_Mtg';
-  if (gender === 'Male')   return 'ICF_Prji';
+
+// Auto-categorize a devotee's department from gender + marital status:
+//   Female + Unmarried → IGF        Female + Married → ICF_Mtg (Mataji)
+//   Male   + Unmarried → IYF        Male   + Married → ICF_Prji (Prabhuji)
+function computeDepartment(gender, maritalStatus) {
+  const g = (gender || '').toLowerCase();
+  const m = (maritalStatus || '').toLowerCase();
+  if (!g || !m) return '';
+  const married = m === 'married';
+  if (g === 'female') return married ? 'ICF_Mtg' : 'IGF';
+  if (g === 'male')   return married ? 'ICF_Prji' : 'IYF';
   return '';
 }
 
@@ -310,6 +329,9 @@ function isBirthdayWeek(dob) {
   }
   return false;
 }
+// Anniversary helpers mirror the birthday ones above.
+function formatAnniversary(date) { return formatBirthday(date); }
+function isAnniversaryWeek(date) { return isBirthdayWeek(date); }
 
 // ── FORMAT HELPERS ─────────────────────────────────────
 // "Expected to be Serious" is stored verbatim in Firestore for backward
@@ -343,16 +365,36 @@ function nameTags(d) {
   return html;
 }
 
-// Calling submission window state. OPEN is MANUAL (Session Config toggle), but
-// it AUTO-CLOSES at 11:59 PM on the calling date (Saturday night). An admin can
-// also close it early by turning the toggle off. Returns true only while the
-// window is effectively open.
+// Calling submission window state — TWO layers:
+//
+//  1. AUTOMATIC (driver) — the configured `callingDate` itself opens the
+//     window for a 24-hour span starting at midnight of that date. No admin
+//     action needed; this is the normal weekly behavior.
+//  2. MANUAL OVERRIDE — the Session Config "Calling Window Open" toggle lets
+//     the admin force the window open OR closed regardless of the calling
+//     date (e.g. early access, late/catch-up submissions, or an early
+//     shutdown). Whatever the admin sets it to wins for exactly 24 hours
+//     from the moment they touch it (`callingWindowOverrideAt`), then the
+//     override expires and control reverts to the automatic calling-date
+//     driver above.
 function isCallingWindowOpen(cfg) {
-  if (!cfg || cfg.callingWindowOpen !== true) return false;
+  if (!cfg) return false;
+
+  const overrideAt = cfg.callingWindowOverrideAt;
+  if (overrideAt) {
+    const ms = overrideAt.toMillis ? overrideAt.toMillis() : new Date(overrideAt).getTime();
+    if (ms && !isNaN(ms) && (Date.now() - ms) < 24 * 60 * 60 * 1000) {
+      return cfg.callingWindowOverride === true; // active override — honor admin's explicit choice
+    }
+  }
+
+  // No active override — let the calling date drive it: open for 24h
+  // starting at the beginning of that date.
   const cd = cfg.callingDate;
-  if (!cd) return true;                       // manually open, no date to gate against
-  const deadline = new Date(cd + 'T23:59:59'); // Saturday 11:59 PM local
-  return new Date() <= deadline;
+  if (!cd) return false;
+  const start = new Date(cd + 'T00:00:00').getTime();
+  const now   = Date.now();
+  return now >= start && now < start + 24 * 60 * 60 * 1000;
 }
 // contactIcons(mobile) → direct call/whatsapp links (single number).
 // contactIcons(mobile, { altMobile, devoteeId, name }) → if altMobile is also
@@ -506,7 +548,13 @@ const DevoteeCache = {
     if (this._inflight) return this._inflight;
     this._inflight = (async () => {
       try {
-        const snap = await fdb.collection('devotees').where('isActive', '==', true).get();
+        let q = fdb.collection('devotees').where('isActive', '==', true);
+        // Team-scoped fetch: users who can't see cross-team data only get their own team.
+        // canCrossTeamManage/Reports/Calling all fold in isSuperAdmin so one check covers all.
+        if (!canCrossTeamManage() && !canCrossTeamReports() && !canCrossTeamCalling() && AppState.userTeam) {
+          q = q.where('teamName', '==', AppState.userTeam);
+        }
+        const snap = await q.get();
         this.raw = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         this.raw.sort((a, b) => a.name.localeCompare(b.name));
         this.stamp = Date.now();

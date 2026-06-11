@@ -20,19 +20,8 @@
 // source of the "stuck on Loading…" bug for super admin).
 let _dashCache = null;  // { key, data: { allDevotees, csByDevotee, presentSet, targetCfg } }
 
-function _bustDashboardCache() { _dashCache = null; }
+function _bustDashboardCache() { _dashCache = null; _cpCache = null; }
 window._bustDashboardCache = _bustDashboardCache;
-
-// ── REPORTS CACHES ───────────────────────────────────────────────────────────
-// DB.getSheetData is the most expensive query in the app (full period scan).
-// Cache keyed by start|end|team. 5-min TTL — fine for reports.
-let _ysCache = null;
-const _YS_TTL = 5 * 60 * 1000;
-
-// Team Leaderboard + Serious Analysis: keyed by sessionId|callingDate. 5 min.
-let _lbReportCache = null;
-let _saCache = null;
-const _REPORT_TTL = 5 * 60 * 1000;
 
 const _DASH_TIMEOUT_MS = 8000;
 function _dashSafe(p, fallback) {
@@ -79,6 +68,7 @@ async function loadDashboard() {
     const data = await _dashFetchData(ctx);
     _dashCache = { key, data };
     safeRender(data, ctx);
+    if (typeof loadSupportBadge === 'function') loadSupportBadge();
   } catch (e) {
     console.error('loadDashboard fetch', e);
     el.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Failed to load — <button onclick="loadDashboard()" style="text-decoration:underline;background:none;border:none;cursor:pointer;color:inherit">Retry</button></p></div>';
@@ -375,10 +365,8 @@ function loadReports() {
   if (id === 'attendance-detail') loadYearlySheet();
   if (id === 'late-comers')       loadLateComersReport();
   if (id === 'serious-analysis')  loadSeriousAnalysis();
-  if (id === 'team-leaderboard')  loadTeamLeaderboard();
   if (id === 'trends')            loadTrends();
   if (id === 'newcomers-report')  loadNewComersReport();
-  if (id === 'att-accuracy')      loadAttAccuracyReport();
 }
 
 // Reports → Attendance Reports → New Comers
@@ -607,11 +595,6 @@ async function loadAttendanceDetail() {
 
 async function loadSeriousAnalysis() {
   const c = document.getElementById('serious-analysis-content');
-  const saKey = `${AppState.currentReportSessionId || AppState.currentSessionId || ''}`;
-  if (_saCache && _saCache.key === saKey && Date.now() - _saCache.ts < _REPORT_TTL) {
-    c.innerHTML = _saCache.html;
-    return;
-  }
   c.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i></div>';
   try {
     const callingDate = await resolveCallingDate(getWeekDate());
@@ -633,55 +616,6 @@ async function loadSeriousAnalysis() {
         return `<tr><td style="font-weight:700">${team}</td>${cells}</tr>`;
       }).join('')}
       </tbody></table></div>`;
-    _saCache = { key: saKey, html: c.innerHTML, ts: Date.now() };
-  } catch (_) { c.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Failed to load</p></div>'; }
-}
-
-async function loadTeamLeaderboard() {
-  const c = document.getElementById('team-leaderboard-content');
-  const lbKey = `${AppState.currentReportSessionId || AppState.currentSessionId || ''}`;
-  if (_lbReportCache && _lbReportCache.key === lbKey && Date.now() - _lbReportCache.ts < _REPORT_TTL) {
-    c.innerHTML = _lbReportCache.html;
-    return;
-  }
-  c.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i></div>';
-  try {
-    const callingDate = await resolveCallingDate(getWeekDate());
-    const [data, targetCfg] = await Promise.all([
-      DB.getTeamsReport(callingDate, AppState.currentReportSessionId || AppState.currentSessionId),
-      DB.getAttendanceTargets().catch(() => ({ type: 'class', teams: {} })),
-    ]);
-    // Compute configTarget and pct for every row first, then sort by pct
-    const ranked = data.map(row => {
-      const configTarget = (targetCfg.teams && targetCfg.teams[row.team] > 0)
-        ? targetCfg.teams[row.team]
-        : (targetCfg.global > 0 ? targetCfg.global : row.total);
-      const pct = configTarget > 0 ? Math.round(row.actualPresent / configTarget * 100) : 0;
-      return { ...row, configTarget, pct };
-    });
-    ranked.sort((a, b) => b.pct - a.pct || b.actualPresent - a.actualPresent);
-
-    c.innerHTML = `<div class="table-scroll"><table class="report-table leaderboard-table">
-      <thead><tr><th>Rank</th><th>Team</th><th>Total</th><th>Calling List</th><th>Target</th><th>Present</th><th>Achievement</th></tr></thead>
-      <tbody>${ranked.map((row, i) => {
-        const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`;
-        const cls   = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'';
-        const col   = row.pct>=100?'var(--success)':row.pct>=70?'var(--warning)':'var(--danger)';
-        return `<tr>
-          <td class="leaderboard-rank ${cls}">${medal}</td>
-          <td style="font-weight:700">${row.team}</td>
-          <td style="text-align:center">${row.total}</td>
-          <td style="text-align:center">${row.callingList}</td>
-          <td style="text-align:center">${row.configTarget}</td>
-          <td style="text-align:center;font-weight:700;color:var(--success)">${row.actualPresent}</td>
-          <td><div style="display:flex;align-items:center;gap:.5rem">
-            <div class="pct-bar-wrap"><div class="pct-bar" style="width:${Math.min(row.pct,100)}%"></div></div>
-            <span style="font-size:.82rem;font-weight:700;color:${col}">${row.pct}%</span>
-          </div></td>
-        </tr>`;
-      }).join('')}
-      </tbody></table></div>`;
-    _lbReportCache = { key: lbKey, html: c.innerHTML, ts: Date.now() };
   } catch (_) { c.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Failed to load</p></div>'; }
 }
 
@@ -737,30 +671,34 @@ let _careRawCache = null;  // { key, absentWeek, absent2Weeks, newcomers, inacti
 function _bustCareCache() { _careRawCache = null; }
 window._bustCareCache = _bustCareCache;
 
+let _careInFlight = false;
 async function loadCareData() {
+  if (_careInFlight) return;
   const sessionDate = getFilterSessionId() || '';
   const key = sessionDate;
 
-  if (!_careRawCache || _careRawCache.key !== key) {
-    try {
-      const [absentResult, newComers, inactive, saidComingResult] = await Promise.all([
-        DB.getCareAbsent(sessionDate || undefined).catch(() => ({ absentThisWeek: [], absentPast2Weeks: [] })),
-        DB.getNewComersForSession(sessionDate).catch(() => []),
-        DB.getCareInactive().catch(() => []),
-        _careFetchSaidComing(sessionDate).catch(() => ({ list: [], weekDate: '' })),
-      ]);
-      _careRawCache = {
-        key,
-        absentWeek:   absentResult.absentThisWeek || [],
-        absent2Weeks: absentResult.absentPast2Weeks || [],
-        newComers:    newComers || [],
-        inactive:     inactive || [],
-        saidComing:   saidComingResult,
-      };
-    } catch (e) {
-      console.error('loadCareData fetch', e);
-      return;
-    }
+  if (_careRawCache && _careRawCache.key === key) { _careRender(); return; }
+
+  _careInFlight = true;
+  try {
+    const [absentResult, newComers, inactive, saidComingResult] = await Promise.all([
+      DB.getCareAbsent(sessionDate || undefined).catch(() => ({ absentThisWeek: [], absentPast2Weeks: [] })),
+      DB.getNewComersForSession(sessionDate).catch(() => []),
+      DB.getCareInactive().catch(() => []),
+      _careFetchSaidComing(sessionDate).catch(() => ({ list: [], weekDate: '' })),
+    ]);
+    _careRawCache = {
+      key,
+      absentWeek:   absentResult.absentThisWeek || [],
+      absent2Weeks: absentResult.absentPast2Weeks || [],
+      newComers:    newComers || [],
+      inactive:     inactive || [],
+      saidComing:   saidComingResult,
+    };
+  } catch (e) {
+    console.error('loadCareData fetch', e);
+  } finally {
+    _careInFlight = false;
   }
 
   _careRender();
@@ -772,13 +710,7 @@ async function loadCareData() {
 function _careRender() {
   if (!_careRawCache) return;
   const team = getFilterTeam();
-  const dept = (typeof getFilterDept === 'function') ? getFilterDept() : '';
-  const deptTeams = (dept && typeof getTeamsForDept === 'function') ? getTeamsForDept(dept) : [];
-  const tf = list => {
-    if (team) return list.filter(d => (d.team_name || d.teamName) === team);
-    if (deptTeams.length) return list.filter(d => deptTeams.includes(d.team_name || d.teamName));
-    return list;
-  };
+  const tf = list => team ? list.filter(d => (d.team_name || d.teamName) === team) : list;
 
   const w1 = tf(_careRawCache.absentWeek);
   const w2 = tf(_careRawCache.absent2Weeks);
@@ -812,9 +744,11 @@ async function _careFetchSaidComing(masterSessionDate) {
     if (sessSnap.empty) return { list: [], weekDate: '' };
     sessionDate = sessSnap.docs[0].data().sessionDate;
   }
-  const callingDate = await resolveCallingDate(sessionDate);
+  const [callingDate, all] = await Promise.all([
+    resolveCallingDate(sessionDate),
+    DevoteeCache.all(),
+  ]);
   const { list } = await DB.getYesAbsentList(callingDate, sessionDate);
-  const all = await DevoteeCache.all();
   const byId = Object.fromEntries(all.map(d => [d.id, d]));
   const enriched = (list || []).map(item => {
     const d = byId[item.id] || {};
@@ -1223,7 +1157,7 @@ async function loadEvents() {
       <div class="event-card" onclick="openEventDetail('${ev.id}')">
         <div class="event-card-header">
           <div><div class="event-name">${ev.event_name}</div><div class="event-date"><i class="fas fa-calendar"></i> ${formatDate(ev.event_date) || 'Date TBD'}</div></div>
-          <div class="event-actions" onclick="event.stopPropagation()">
+          <div class="event-actions admin-coordinator-only" onclick="event.stopPropagation()">
             <button class="btn-icon" onclick="openEditEventModal('${ev.id}')" title="Edit"><i class="fas fa-pencil-alt"></i></button>
             <button class="btn-icon close" onclick="deleteEvent('${ev.id}')" title="Delete"><i class="fas fa-trash"></i></button>
           </div>
@@ -1294,7 +1228,7 @@ async function loadEventDevotees() {
         <div class="devotee-avatar" style="width:30px;height:30px;font-size:.7rem;flex-shrink:0">${initials(d.name)}</div>
         <div style="flex:1"><div class="care-item-name">${d.name}</div><div class="care-item-meta">${d.team_name||''} ${d.mobile||''}</div></div>
         ${contactIcons(d.mobile)}
-        <button class="btn-icon close" style="width:26px;height:26px;font-size:.75rem" onclick="removeEventDevotee('${d.devotee_id}')"><i class="fas fa-times"></i></button>
+        <button class="btn-icon close admin-coordinator-only" style="width:26px;height:26px;font-size:.75rem" onclick="removeEventDevotee('${d.devotee_id}')"><i class="fas fa-times"></i></button>
       </div>`).join('');
   } catch (_) {}
 }
@@ -1349,7 +1283,7 @@ async function exportEventDevotees() {
         Mobile:              d.mobile || '',
         Team:                d.team_name || '',
         'Chanting Rounds':   full.chantingRounds || 0,
-        'Vaishnav Dress':    full.vaishnavDress ? 'Yes' : 'No',
+        'Gopi Dress':        full.gopiDress ? 'Yes' : 'No',
         'Lifetime AT':       full.lifetimeAttendance || 0,
         'Plays Instrument':  full.playsInstrument || '',
         'Instrument':        full.instrumentName || '',
@@ -1728,14 +1662,6 @@ async function loadYearlySheet() {
   const r = _reportRange();
   const start = r.start, end = r.end;
   const teamFilter = getFilterTeam();
-  const ysKey = `${start}|${end}|${teamFilter}`;
-
-  // CACHE HIT — heavy sheet renders instantly (no Firestore round-trip)
-  if (_ysCache && _ysCache.key === ysKey && Date.now() - _ysCache.ts < _YS_TTL) {
-    wrap.innerHTML = _ysCache.html;
-    return;
-  }
-
   wrap.innerHTML = '<div class="loading" style="padding:2rem"><i class="fas fa-spinner"></i> Loading…</div>';
   try {
     const [sheetData, stats] = await Promise.all([
@@ -1768,19 +1694,12 @@ async function loadYearlySheet() {
           <span class="sh-stat-lbl">Total Present</span>
         </div>
       </div>` : '';
-    const finalHTML = statsBar + buildFullSheetTable(devotees, sessions, attMap, csMap, teamFilter, attTimeMap);
-    _ysCache = { key: ysKey, html: finalHTML, ts: Date.now() };
-    wrap.innerHTML = finalHTML;
+    wrap.innerHTML = statsBar + buildFullSheetTable(devotees, sessions, attMap, csMap, teamFilter, attTimeMap);
   } catch (e) {
     console.error('loadYearlySheet', e);
     wrap.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Failed to load</p></div>';
   }
 }
-
-// ══ ATTENDANCE TAB — ACCURACY REPORT ════════════════════════════════════════
-// Shows: per-team and per-caller breakdown of who said Yes vs who actually came.
-// Logic mirrors _loadAccuracyReport() in ui-calling.js but lives in the
-// Attendance tab so users don't need to switch tabs to check calling accuracy.
 
 async function loadAttAccuracyReport() {
   const el = document.getElementById('att-accuracy-content');
@@ -1913,11 +1832,11 @@ async function loadAttAccuracyReport() {
           </tr></thead>
           <tbody>
             ${bodyRows || '<tr><td colspan="5" style="text-align:center;padding:1.5rem;color:var(--text-muted)">No data for this session</td></tr>'}
-            <tr style="background:#1e40af;color:#fff;font-weight:700;font-size:.83rem">
-              <td>Grand Total</td>
-              <td style="text-align:center">${grandYes}</td>
-              <td style="text-align:center">${grandCame}</td>
-              <td style="text-align:center">${grandAbsentCell}</td>
+            <tr style="background:#1e40af;font-weight:700;font-size:.83rem">
+              <td style="color:#fff">Grand Total</td>
+              <td style="text-align:center;color:#fff">${grandYes}</td>
+              <td style="text-align:center;color:#fff">${grandCame}</td>
+              <td style="text-align:center;color:#fff">${grandAbsentCell}</td>
               <td style="text-align:center;${grandAccStyle}">${grandAcc}%</td>
             </tr>
           </tbody>
@@ -1939,6 +1858,17 @@ function toggleCMConfig(btn) {
   const hidden = row.classList.toggle('hidden');
   btn.innerHTML = hidden ? '<i class="fas fa-cog"></i> Configure' : '<i class="fas fa-times"></i> Close';
 }
+
+function cmAutoFillCallingDate() {
+  const sd = document.getElementById('cm-config-session-date')?.value;
+  if (!sd) return;
+  const d = new Date(sd + 'T00:00:00');
+  d.setDate(d.getDate() - 1); // Saturday before the Sunday session
+  const sat = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const ci = document.getElementById('cm-config-calling-date');
+  if (ci) ci.value = sat;
+}
+window.cmAutoFillCallingDate = cmAutoFillCallingDate;
 
 async function saveCMCallingDates() {
   const cd = document.getElementById('cm-config-calling-date')?.value;
@@ -1972,12 +1902,13 @@ function switchCallingMgmtTab(tab, btn) {
   document.querySelectorAll('#calling-mgmt-tabs .att-sub-tab').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   else document.querySelector(`#calling-mgmt-tabs .att-sub-tab[onclick*="'${tab}'"]`)?.classList.add('active');
-  ['calling', 'newcomers', 'online', 'notinterested', 'festival'].forEach(p => {
+  ['calling', 'newcomers', 'unassigned', 'online', 'notinterested', 'festival'].forEach(p => {
     const el = document.getElementById('calling-mgmt-panel-' + p);
     if (el) el.classList.toggle('active', p === tab);
   });
   if (tab === 'calling')       _renderCMWeek();
   if (tab === 'newcomers')     _renderCMNewComers();
+  if (tab === 'unassigned')    _renderCMUnassigned();
   if (tab === 'online')        _renderCMSingleList('online');
   if (tab === 'notinterested') _renderCMSingleList('notinterested');
   if (tab === 'festival')      _renderCMSingleList('festival');
@@ -2038,14 +1969,19 @@ async function loadCallingMgmtTab() {
     _cmDispatchSubtabRender();
   } catch (e) {
     console.error('loadCallingMgmtTab', e);
+    const detail = `${e.code ? '[' + e.code + '] ' : ''}${e.message || e}`.replace(/</g, '&lt;');
     if (weekEl) weekEl.innerHTML = `<div class="empty-state"><i class="fas fa-exclamation-circle"></i>
-      <p>Failed to load.<br><small style="color:var(--danger)">If this is your first time: deploy Firestore rules in Firebase Console → Firestore → Rules, then refresh.</small></p></div>`;
+      <p>Failed to load.<br><small style="color:var(--danger)">${detail}</small><br>
+      <button class="btn btn-secondary" style="margin-top:.5rem" onclick="_bustCMCache(); loadCallingMgmtTab()">
+        <i class="fas fa-rotate-right"></i> Retry
+      </button></p></div>`;
   }
 }
 
 function _cmDispatchSubtabRender() {
   if (_cmActiveSubtab === 'calling')       _renderCMWeek();
   if (_cmActiveSubtab === 'newcomers')     _renderCMNewComers();
+  if (_cmActiveSubtab === 'unassigned')    _renderCMUnassigned();
   if (_cmActiveSubtab === 'online')        _renderCMSingleList('online');
   if (_cmActiveSubtab === 'notinterested') _renderCMSingleList('notinterested');
   if (_cmActiveSubtab === 'festival')      _renderCMSingleList('festival');
@@ -2229,7 +2165,9 @@ function _renderCMWeek() {
 
   let rows = '';
   let sno  = 1;
-  // Render TEAMS in canonical order, then any extra teams present in DB but not in TEAMS list
+  // Render the 4 departments in canonical order first, then any other
+  // group present (legacy/blank team values) so every devotee stays
+  // visible here for assignment — this is where teams get managed.
   const orderedTeams = [
     ...TEAMS.filter(t => teamMap[t]?.length),
     ...Object.keys(teamMap).filter(t => !TEAMS.includes(t) && teamMap[t]?.length).sort()
@@ -2620,8 +2558,56 @@ async function _renderCMNewComers() {
       </div>`;
   } catch (e) {
     console.error('_renderCMNewComers', e);
-    el.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Failed to load</p></div>';
+    const detail = `${e.code ? '[' + e.code + '] ' : ''}${e.message || e}`.replace(/</g, '&lt;');
+    el.innerHTML = `<div class="empty-state"><i class="fas fa-exclamation-circle"></i>
+      <p>Failed to load.<br><small style="color:var(--danger)">${detail}</small></p></div>`;
   }
+}
+
+// ── Unassigned: active devotees with no caller assigned (not online/festival/not-interested) ──
+function _renderCMUnassigned() {
+  const el = document.getElementById('cm-unassigned-content');
+  if (!el) return;
+  if (!_cmData) { el.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i></div>'; return; }
+  const { devotees } = _cmData;
+  const items = devotees.filter(d =>
+    !d.callingBy &&
+    d.callingMode !== 'online' && d.callingMode !== 'festival' && d.callingMode !== 'not_interested' &&
+    d.isNotInterested !== true
+  );
+  if (!items.length) {
+    el.innerHTML = `<div class="empty-state"><i class="fas fa-user-slash"></i><p>Everyone has a caller assigned 🎉</p></div>`;
+    return;
+  }
+  const rows = items.map((d, i) => {
+    const safeName = (d.name || '—').replace(/'/g, "\\'");
+    const safeTeam = (d.teamName || '').replace(/'/g, "\\'");
+    return `<tr style="font-size:.82rem">
+    <td style="color:var(--text-muted);text-align:center">${i + 1}</td>
+    <td>
+      <button class="cm-link" onclick="openProfileModal('${d.id}')">${d.name}</button>
+      ${d.mobile ? `<div style="font-size:.7rem;color:var(--text-muted)">${d.mobile}</div>` : ''}
+    </td>
+    <td style="white-space:nowrap">${teamBadge(d.teamName)}</td>
+    <td>
+      <button class="btn btn-secondary" style="padding:.18rem .55rem;font-size:.72rem" onclick="openChangeCallingBy('${d.id}','${safeName}','${safeTeam}','')">
+        <i class="fas fa-headset"></i> Assign Caller
+      </button>
+    </td>
+  </tr>`;
+  }).join('');
+
+  el.innerHTML = `<div class="sr-team-block">
+    <div class="sr-team-banner" style="background:#6a1b9a;color:#fff">
+      <i class="fas fa-user-slash"></i> Unassigned
+      <span style="font-size:.8rem;font-weight:400;opacity:.85"> (${items.length})</span>
+    </div>
+    <div style="font-size:.74rem;color:var(--text-muted);margin:.5rem 0 .35rem"><i class="fas fa-info-circle"></i> These devotees have no calling coordinator assigned yet. Tap <strong>Assign Caller</strong> to set one directly.</div>
+    <table class="calling-table sr-table" style="margin:0">
+      <thead><tr><th>#</th><th>Name</th><th>Team</th><th>Calling By</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
 }
 
 function _renderCMSingleList(type) {
@@ -3145,14 +3131,14 @@ async function openPersonalMeetings() {
 
 // ── MEETINGS TAB ─────────────────────────────────────────────
 // State for the Meetings tab. Sub-tab + status-filter + cached data.
-let _meetActiveSubTab = 'overdue';   // overdue | scheduled | completed | recent
+let _meetActiveSubTab = 'scheduled'; // scheduled | my-log | completed | recent | overdue | ptm
 let _meetStatusFilter = 'all';        // all | Most Serious | Serious | ETS | New Devotee | Inactive
 
 function switchMeetingsSubTab(btn, sub) {
   _meetActiveSubTab = sub;
   document.querySelectorAll('.meet-sub-panel').forEach(p => p.classList.add('hidden'));
   document.getElementById('meet-panel-' + sub)?.classList.remove('hidden');
-  const labels = { overdue:'Overdue', scheduled:'Scheduled', completed:'Completed', recent:'Recently Met', ptm:'PTM', 'my-log':'My Log' };
+  const labels = { overdue:'Overdue', scheduled:'Schedule', completed:'Completed', recent:'Recently Met', ptm:'PTM', 'my-log':'My Log' };
   const lbl = document.getElementById('meet-active-label');
   if (lbl) lbl.textContent = labels[sub] || '';
 
@@ -3266,21 +3252,35 @@ async function _loadMyLogTab() {
   if (!el) return;
   el.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i> Loading…</div>';
   try {
-    const [myInteractions, allDevotees] = await Promise.all([
+    const [myInteractions, allDevotees, allMeetings] = await Promise.all([
       DB.getMyInteractions(AppState.userId),
       DevoteeCache.all(),
+      DB.getPersonalMeetings(),
     ]);
+
+    // Build devotee lookup by id (camelCase from DevoteeCache)
+    const devoteeMap = {};
+    allDevotees.forEach(d => { devoteeMap[d.id] = d; });
+
+    // Group interactions + completed personal meetings by devotee
     const byDevotee = {};
     myInteractions.forEach(ix => {
-      if (!byDevotee[ix.devoteeId]) byDevotee[ix.devoteeId] = { name: ix.devoteeName, team: ix.teamName, interactions: [] };
+      if (!byDevotee[ix.devoteeId]) byDevotee[ix.devoteeId] = { name: ix.devoteeName, team: ix.teamName, interactions: [], meetings: [], lastAt: ix.atClient || '' };
       byDevotee[ix.devoteeId].interactions.push(ix);
+      if ((ix.atClient || '') > (byDevotee[ix.devoteeId].lastAt || '')) byDevotee[ix.devoteeId].lastAt = ix.atClient;
     });
-
-    const entries = Object.entries(byDevotee).sort((a, b) => {
-      const aLast = a[1].interactions[0]?.atClient || '';
-      const bLast = b[1].interactions[0]?.atClient || '';
-      return bLast.localeCompare(aLast);
-    });
+    // Also include completed personal meetings created by this user
+    allMeetings
+      .filter(m => m.status === 'completed' && m.devoteeId && m.createdBy === AppState.userName)
+      .forEach(m => {
+        if (!byDevotee[m.devoteeId]) byDevotee[m.devoteeId] = { name: m.devoteeName || '', team: m.teamName || '', interactions: [], meetings: [], lastAt: '' };
+        byDevotee[m.devoteeId].meetings.push(m);
+        const ts = m.completedDate || m.scheduledDate || '';
+        if (ts > (byDevotee[m.devoteeId].lastAt || '')) byDevotee[m.devoteeId].lastAt = ts;
+      });
+    const entries = Object.entries(byDevotee).sort((a, b) =>
+      (b[1].lastAt || '').localeCompare(a[1].lastAt || '')
+    );
 
     if (!entries.length) {
       el.innerHTML = `
@@ -3294,39 +3294,65 @@ async function _loadMyLogTab() {
       return;
     }
 
-    const fmt = iso => iso ? new Date(iso).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit', hour12:true }) : '—';
-    const levelPill = lv => {
-      const l = INTERACTION_LEVELS[lv] || INTERACTION_LEVELS[4];
-      return `<span style="background:${l.bg};color:${l.color};font-size:.65rem;font-weight:700;padding:.1rem .35rem;border-radius:4px">${l.abbr}</span>`;
-    };
+    const canZoom = isAdminOrCoord();
 
     el.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
-        <span style="font-size:.82rem;color:#64748b"><strong>${entries.length}</strong> devotees · <strong>${myInteractions.length}</strong> total interactions</span>
+        <span style="font-size:.82rem;color:#64748b"><strong>${entries.length}</strong> devotees met</span>
         <button class="btn btn-primary btn-sm" onclick="openLogInteractionModal()">
           <i class="fas fa-plus"></i> Log
         </button>
       </div>
-      ${entries.map(([devId, info]) => `
-        <div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:.7rem .9rem;margin-bottom:.6rem">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.45rem">
-            <div>
-              <span style="font-weight:700;color:#0d2d5a;cursor:pointer;font-size:.9rem"
-                    onclick="openInteractionHistory('${devId}','${(info.name||'').replace(/'/g,"\\'")}','${info.team||''}')">${info.name}</span>
-              <span style="font-size:.72rem;color:#94a3b8;margin-left:.4rem">${info.team || ''}</span>
+      ${entries.map(([devId, info]) => {
+        const dev      = devoteeMap[devId];
+        const name     = dev?.name || info.name || '—';
+        const esc      = name.replace(/'/g,"\\'");
+        const team     = dev?.teamName || info.team || '';
+        const callingBy= dev?.callingBy || '';
+        const mobile   = dev?.mobile || '';
+        const pic      = dev?.profilePic || '';
+        const count    = info.interactions.length + info.meetings.length;
+
+        // Register photo for zoom (avoids embedding base64 in onclick)
+        if (canZoom && pic) _photoZoomMap[devId] = { src: pic, name };
+
+        const avatarHtml = pic
+          ? `<div class="devotee-avatar" style="overflow:hidden;padding:0;flex-shrink:0${canZoom ? ';cursor:zoom-in' : ''}"
+               ${canZoom ? `onclick="openDevoteePhotoZoom('${devId}')" title="Tap to view photo"` : ''}>
+               <img src="${pic}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;pointer-events:none">
+             </div>`
+          : `<div class="devotee-avatar" style="flex-shrink:0">${(name.match(/\b\w/g)||[]).slice(0,2).join('').toUpperCase()}</div>`;
+
+        const waNum = mobile.replace(/\D/g,'');
+        const waFull = waNum.length === 10 ? '91' + waNum : waNum;
+
+        return `
+        <div onclick="_showMyLogOptions('${devId}','${esc}','${team}')"
+             style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:.75rem .85rem;margin-bottom:.6rem;display:flex;gap:.65rem;align-items:flex-start;cursor:pointer;transition:background .15s"
+             onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background='#fff'">
+          ${avatarHtml}
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:.25rem;margin-bottom:.2rem">
+              <span style="font-weight:700;color:#0d2d5a;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
+              <span style="font-size:.68rem;color:#94a3b8;white-space:nowrap;flex-shrink:0">${count} interaction${count !== 1 ? 's' : ''}</span>
             </div>
-            <span style="font-size:.7rem;color:#94a3b8">${info.interactions.length} interactions</span>
+            <div style="display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;margin-bottom:.35rem">
+              ${team ? `<span class="team-badge">${team}</span>` : ''}
+              ${callingBy ? `<span style="font-size:.71rem;color:#64748b"><i class="fas fa-headset" style="font-size:.62rem"></i> ${callingBy}</span>` : ''}
+            </div>
+            ${mobile ? `
+            <div style="display:flex;gap:.3rem;flex-wrap:wrap;align-items:center" onclick="event.stopPropagation()">
+              <a href="tel:${mobile}" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;background:#dcfce7;color:#15803d;border-radius:50%;text-decoration:none;font-size:.82rem" title="Call">
+                <i class="fas fa-phone" style="transform:rotate(10deg)"></i>
+              </a>
+              <a href="https://wa.me/${waFull}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;background:#dcfce7;color:#15803d;border-radius:50%;text-decoration:none;font-size:.92rem" title="WhatsApp">
+                <i class="fab fa-whatsapp"></i>
+              </a>
+            </div>` : ''}
           </div>
-          <div style="display:flex;flex-direction:column;gap:.3rem">
-            ${info.interactions.slice(0,3).map(ix => `
-              <div style="display:flex;align-items:center;gap:.4rem;font-size:.76rem;color:#374151">
-                ${levelPill(ix.level)}
-                <span style="font-weight:600">${TYPE_LABELS[ix.type] || ix.type}</span>
-                <span style="color:#94a3b8;margin-left:auto">${fmt(ix.atClient)}</span>
-              </div>`).join('')}
-            ${info.interactions.length > 3 ? `<div style="font-size:.72rem;color:#94a3b8;text-align:right">+${info.interactions.length-3} more</div>` : ''}
-          </div>
-        </div>`).join('')}`;
+          <i class="fas fa-chevron-right" style="color:#cbd5e1;font-size:.7rem;align-self:center;flex-shrink:0"></i>
+        </div>`;
+      }).join('')}`;
   } catch (e) {
     el.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Failed to load</p></div>';
     console.error('_loadMyLogTab', e);
@@ -3334,12 +3360,19 @@ async function _loadMyLogTab() {
 }
 
 // ── INTERACTION HISTORY MODAL (deep-dive) ─────────────────────────────────────
+let _ihLastDevoteeId  = '';
+let _ihLastDevoteeName = '';
+let _ihLastTeamName   = '';
+
 async function openInteractionHistory(devoteeId, devoteeName, teamName) {
+  _ihLastDevoteeId   = devoteeId;
+  _ihLastDevoteeName = devoteeName;
+  _ihLastTeamName    = teamName || '';
   const modal = document.getElementById('interaction-history-modal');
   const body  = document.getElementById('ih-body');
   document.getElementById('ih-title').innerHTML = `<i class="fas fa-chart-bar"></i> ${devoteeName}`;
   body.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i> Loading…</div>';
-  modal.classList.remove('hidden');
+  openModal('interaction-history-modal');
   try {
     const interactions = await DB.getDevoteeInteractions(devoteeId);
 
@@ -3378,31 +3411,78 @@ async function openInteractionHistory(devoteeId, devoteeName, teamName) {
         </table>
       </div>`;
 
+    // Group interactions by date — WhatsApp Call Info style
+    const grouped = {};
+    interactions.forEach(ix => {
+      const day = ix.atClient ? ix.atClient.substring(0,10) : 'unknown';
+      if (!grouped[day]) grouped[day] = [];
+      grouped[day].push(ix);
+    });
+    const dayFmt = iso => {
+      if (iso === 'unknown') return 'Unknown date';
+      const d = new Date(iso); const today = new Date();
+      const diff = Math.floor((today - d) / 86400000);
+      if (diff === 0) return 'Today';
+      if (diff === 1) return 'Yesterday';
+      return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: d.getFullYear() !== today.getFullYear() ? 'numeric' : undefined });
+    };
+    const typeIconCls  = t => t === 'call' ? 'fas fa-phone-alt' : t === 'meet' ? 'fas fa-handshake' : 'fas fa-users';
+    const typeColor    = t => t === 'call' ? '#15803d' : t === 'meet' ? '#1d4ed8' : '#b45309';
+    const typeBg       = t => t === 'call' ? '#dcfce7' : t === 'meet' ? '#dbeafe' : '#fef3c7';
+
     const timelineHtml = interactions.length ? `
       <div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.55rem">
           <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8">Timeline (${interactions.length})</div>
-          <button class="btn btn-primary btn-sm" onclick="openLogInteractionModal('${devoteeId}','${devoteeName.replace(/'/g,"\\'")}')">
+          <button class="btn btn-primary btn-sm" onclick="openLogInteractionModal('${devoteeId}','${devoteeName.replace(/'/g,"\\'")}','${(teamName||'').replace(/'/g,"\\'")}')">
             <i class="fas fa-plus"></i> Add
           </button>
         </div>
-        ${interactions.map(ix => {
-          const l = INTERACTION_LEVELS[ix.level] || INTERACTION_LEVELS[4];
-          return `<div style="border-left:3px solid ${l.color};padding:.4rem .7rem;margin-bottom:.45rem;background:#fff;border-radius:0 6px 6px 0;box-shadow:0 1px 3px rgba(0,0,0,.05)">
-            <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
-              <span style="background:${l.bg};color:${l.color};font-size:.65rem;font-weight:700;padding:.1rem .35rem;border-radius:4px">${l.abbr}</span>
-              <span style="font-weight:700;font-size:.8rem">${TYPE_LABELS[ix.type] || ix.type}</span>
-              <span style="font-size:.72rem;color:#94a3b8;margin-left:auto">${fmt(ix.atClient)}</span>
+        <div style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;background:#fff">
+          ${Object.entries(grouped).map(([day, ixs]) => `
+            <div style="padding:.3rem .9rem .1rem;background:#f8fafc;border-bottom:1px solid #f1f5f9">
+              <span style="font-size:.7rem;font-weight:700;color:#64748b;letter-spacing:.04em">${dayFmt(day).toUpperCase()}</span>
             </div>
-            <div style="font-size:.72rem;color:#64748b;margin-top:.2rem">by ${ix.by}</div>
-            ${ix.notes ? `<div style="font-size:.75rem;color:#374151;margin-top:.2rem;font-style:italic">"${ix.notes}"</div>` : ''}
-          </div>`;
-        }).join('')}
+            ${ixs.map((ix, idx) => {
+              const l = INTERACTION_LEVELS[ix.level] || INTERACTION_LEVELS[4];
+              const uid = `ix-${day.replace(/-/g,'')}-${idx}`;
+              const hasDetail = ix.notes || ix.chantingRounds || ix.profession;
+              const timeFmt = ix.atClient ? new Date(ix.atClient).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true}) : '—';
+              return `
+              <div onclick="${hasDetail ? `_toggleIxDetail('${uid}')` : ''}"
+                   style="display:flex;align-items:center;gap:.65rem;padding:.6rem .9rem;border-bottom:1px solid #f1f5f9;cursor:${hasDetail ? 'pointer' : 'default'};transition:background .15s"
+                   onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background=''">
+                <div style="width:36px;height:36px;border-radius:50%;background:${typeBg(ix.type)};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                  <i class="${typeIconCls(ix.type)}" style="color:${typeColor(ix.type)};font-size:.85rem"></i>
+                </div>
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;align-items:center;gap:.35rem">
+                    <span style="font-weight:700;font-size:.82rem;color:#0d2d5a">${TYPE_LABELS[ix.type] || ix.type}</span>
+                    <span style="background:${l.bg};color:${l.color};font-size:.6rem;font-weight:700;padding:.07rem .28rem;border-radius:4px">${l.abbr}</span>
+                  </div>
+                  <div style="font-size:.7rem;color:#64748b;margin-top:.05rem">by ${ix.by || '—'}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:.4rem;flex-shrink:0">
+                  <span style="font-size:.7rem;color:#94a3b8">${timeFmt}</span>
+                  ${hasDetail ? `<i id="${uid}-icon" class="fas fa-chevron-down" style="font-size:.65rem;color:#94a3b8"></i>` : ''}
+                </div>
+              </div>
+              ${hasDetail ? `
+              <div id="${uid}" style="display:none;padding:.5rem .9rem .6rem 3.6rem;background:#fafbff;border-bottom:1px solid #f1f5f9">
+                ${ix.notes ? `<div style="font-size:.76rem;color:#374151;font-style:italic;margin-bottom:.25rem">"${ix.notes}"</div>` : ''}
+                <div style="display:flex;gap:.8rem;flex-wrap:wrap">
+                  ${ix.chantingRounds ? `<span style="font-size:.72rem;color:#15803d"><i class="fas fa-pray"></i> ${ix.chantingRounds} rounds</span>` : ''}
+                  ${ix.profession    ? `<span style="font-size:.72rem;color:#1d4ed8"><i class="fas fa-briefcase"></i> ${ix.profession}</span>` : ''}
+                </div>
+              </div>` : ''}`;
+            }).join('')}
+          `).join('')}
+        </div>
       </div>` : `
       <div style="text-align:center;padding:1rem">
         <p style="color:#94a3b8;font-size:.85rem">No interactions logged yet</p>
         <button class="btn btn-primary btn-sm" style="margin-top:.5rem"
-                onclick="openLogInteractionModal('${devoteeId}','${devoteeName.replace(/'/g,"\\'")}')">
+                onclick="openLogInteractionModal('${devoteeId}','${devoteeName.replace(/'/g,"\\'")}','${(teamName||'').replace(/'/g,"\\'")}')">
           <i class="fas fa-plus"></i> Log First Interaction
         </button>
       </div>`;
@@ -3415,16 +3495,91 @@ async function openInteractionHistory(devoteeId, devoteeName, teamName) {
 }
 window.openInteractionHistory = openInteractionHistory;
 
-// ── LOG INTERACTION MODAL ─────────────────────────────────────────────────────
-let _liPrefillDevoteeId = null;
-let _liPrefillDevoteeName = '';
+function _toggleIxDetail(uid) {
+  const el   = document.getElementById(uid);
+  const icon = document.getElementById(uid + '-icon');
+  if (!el) return;
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'block';
+  if (icon) { icon.classList.toggle('fa-chevron-down', open); icon.classList.toggle('fa-chevron-up', !open); }
+}
+window._toggleIxDetail = _toggleIxDetail;
 
-function openLogInteractionModal(devoteeId, devoteeName) {
-  _liPrefillDevoteeId = devoteeId || null;
+// ── MY LOG — card click → centered options box ───────────────────────────────
+function _showMyLogOptions(devoteeId, devoteeName, teamName) {
+  const existing = document.getElementById('ml-option-overlay');
+  if (existing) existing.remove();
+
+  const esc = devoteeName.replace(/'/g, "\\'");
+  const overlay = document.createElement('div');
+  overlay.id = 'ml-option-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:1rem';
+  overlay.onclick = () => overlay.remove();
+
+  overlay.innerHTML = `
+    <div onclick="event.stopPropagation()"
+         style="background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.22);width:100%;max-width:320px;overflow:hidden">
+      <div style="padding:.9rem 1.1rem .6rem;border-bottom:1px solid #f1f5f9">
+        <div style="font-weight:700;font-size:.95rem;color:#0d2d5a">${devoteeName}</div>
+        <div style="font-size:.75rem;color:#94a3b8;margin-top:.1rem">What would you like to do?</div>
+      </div>
+      <button onclick="document.getElementById('ml-option-overlay').remove();openProfileModal('${devoteeId}')"
+        style="width:100%;display:flex;align-items:center;gap:.85rem;padding:.85rem 1.1rem;border:none;background:transparent;cursor:pointer;font-size:.88rem;color:#0d2d5a;font-weight:600;border-bottom:1px solid #f1f5f9;text-align:left"
+        onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background=''">
+        <div style="width:36px;height:36px;border-radius:50%;background:#f0fdf4;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <i class="fas fa-user" style="color:#15803d;font-size:.85rem"></i>
+        </div>
+        <div>
+          <div>Devotee Profile</div>
+          <div style="font-size:.72rem;font-weight:400;color:#64748b;margin-top:.05rem">View full profile, edit details</div>
+        </div>
+      </button>
+      <button onclick="document.getElementById('ml-option-overlay').remove();openInteractionHistory('${devoteeId}','${esc}','${teamName}')"
+        style="width:100%;display:flex;align-items:center;gap:.85rem;padding:.85rem 1.1rem;border:none;background:transparent;cursor:pointer;font-size:.88rem;color:#0d2d5a;font-weight:600;text-align:left"
+        onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background=''">
+        <div style="width:36px;height:36px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <i class="fas fa-history" style="color:#1d4ed8;font-size:.85rem"></i>
+        </div>
+        <div>
+          <div>Interaction History</div>
+          <div style="font-size:.72rem;font-weight:400;color:#64748b;margin-top:.05rem">Calls, meets, timeline &amp; notes</div>
+        </div>
+      </button>
+    </div>`;
+
+  document.body.appendChild(overlay);
+}
+window._showMyLogOptions = _showMyLogOptions;
+
+// ── LOG INTERACTION MODAL ─────────────────────────────────────────────────────
+let _liPrefillDevoteeId   = null;
+let _liPrefillDevoteeName = '';
+// Track whether log was opened from inside the history modal so we can reopen it after save
+let _liReturnToHistory    = false;
+let _liReturnDevoteeId    = '';
+let _liReturnDevoteeName  = '';
+let _liReturnTeamName     = '';
+
+function openLogInteractionModal(devoteeId, devoteeName, teamName) {
+  _liPrefillDevoteeId   = devoteeId || null;
   _liPrefillDevoteeName = devoteeName || '';
+
+  // If the history modal is currently open, close it first so the log form
+  // appears on top, and remember to reopen history after saving.
+  const histModal = document.getElementById('interaction-history-modal');
+  _liReturnToHistory = histModal && !histModal.classList.contains('hidden');
+  if (_liReturnToHistory) {
+    _liReturnDevoteeId   = devoteeId || '';
+    _liReturnDevoteeName = devoteeName || '';
+    _liReturnTeamName    = teamName || _ihLastTeamName || '';
+    closeModal('interaction-history-modal');
+  }
+
   document.getElementById('li-devotee-id').value   = devoteeId || '';
   document.getElementById('li-devotee-name').value = devoteeName || '';
   document.getElementById('li-notes').value = '';
+  document.getElementById('li-chanting').value = '';
+  document.getElementById('li-profession').value = '';
   document.getElementById('li-error').style.display = 'none';
   document.querySelector('input[name="li-type"][value="call"]').checked = true;
   document.getElementById('li-level').value = '4';
@@ -3460,8 +3615,10 @@ async function saveInteraction() {
   const devoteeName = document.getElementById('li-devotee-name').value.trim();
   const level       = parseInt(document.getElementById('li-level').value);
   const type        = document.querySelector('input[name="li-type"]:checked')?.value || 'call';
-  const notes       = document.getElementById('li-notes').value.trim();
-  const errEl       = document.getElementById('li-error');
+  const notes          = document.getElementById('li-notes').value.trim();
+  const chantingRounds = parseInt(document.getElementById('li-chanting').value) || null;
+  const profession     = document.getElementById('li-profession').value.trim() || null;
+  const errEl          = document.getElementById('li-error');
   errEl.style.display = 'none';
 
   if (!devoteeId || !devoteeName) {
@@ -3471,11 +3628,15 @@ async function saveInteraction() {
   const dev = all.find(d => d.id === devoteeId) || {};
 
   try {
-    await DB.logInteraction({ devoteeId, devoteeName, teamName: dev.teamName || '', level, type, notes, by: AppState.userName, byUserId: AppState.userId });
+    await DB.logInteraction({ devoteeId, devoteeName, teamName: dev.teamName || '', level, type, notes, chantingRounds, profession, by: AppState.userName, byUserId: AppState.userId });
     closeModal('log-interaction-modal');
     showToast('Interaction logged! Hare Krishna 🙏', 'success');
-    // Refresh whichever meet sub-tab is active
     if (_meetActiveSubTab === 'my-log') _loadMyLogTab();
+    // If log was opened from history modal, reopen it with fresh data
+    if (_liReturnToHistory && _liReturnDevoteeId) {
+      _liReturnToHistory = false;
+      openInteractionHistory(_liReturnDevoteeId, _liReturnDevoteeName, _liReturnTeamName);
+    }
   } catch (e) {
     errEl.textContent = 'Save failed: ' + e.message; errEl.style.display = 'block';
   }
@@ -3497,6 +3658,9 @@ function _renderMeetingsTabContent() {
   const recent    = _pmRenderState?.recent || [];
   const completed = (_meetingsCache || []).filter(m => m.status === 'completed')
                       .sort((a, b) => (b.completedDate || b.scheduledDate || '').localeCompare(a.completedDate || a.scheduledDate || ''));
+
+  // my-log and ptm load their own data independently — chips not applicable.
+  if (_meetActiveSubTab === 'my-log' || _meetActiveSubTab === 'ptm') return;
 
   // Determine which list the chip filter applies to (depends on active sub-tab).
   const activeList =
@@ -4045,6 +4209,10 @@ function openScheduleMeetingForm(meetingId = null, devoteeId = null) {
     ? '<i class="fas fa-edit"></i> Edit Meeting'
     : '<i class="fas fa-calendar-plus"></i> Schedule Meeting';
   document.getElementById('meeting-delete-btn').classList.toggle('hidden', !meetingId);
+  // Status (Completed/Missed/Cancelled) and Authority Remarks only make sense
+  // when editing an existing meeting — a brand-new meeting hasn't happened yet.
+  document.getElementById('meeting-status-wrap').classList.toggle('hidden', !meetingId);
+  document.getElementById('meeting-remarks-wrap').classList.toggle('hidden', !meetingId);
 
   if (meetingId && _meetingsCache) {
     const m = _meetingsCache.find(x => x.id === meetingId);
@@ -4430,23 +4598,31 @@ function downloadIndividualReports() {
 // Clicking a team bubble on the home leaderboard routes here with master Team
 // filter pre-set, so the table scopes to that one team instantly.
 let _cpInFlight = null;
+let _cpCache = null;  // { key, ts } — key = sessionId|callingDate|team
+const _CP_TTL = 3 * 60 * 1000;
+
 async function loadCoordinatorPerformance() {
   if (_cpInFlight) return _cpInFlight;
   const el = document.getElementById('att-coordinator-content');
   if (!el) return;
-  // Spinner is set only on cache-miss (mirrors loadDashboard pattern).
-  // Cache-hit path re-renders instantly without clearing the element.
   _cpInFlight = (async () => {
     try {
-      const ctx = await _dashResolveContext();
-      const key  = `${ctx.sessionId || ''}|${ctx.callingDate || ''}`;
+      const ctx  = await _dashResolveContext();
+      const team = (typeof getFilterTeam === 'function') ? getFilterTeam() : '';
+      const cpKey = `${ctx.sessionId || ''}|${ctx.callingDate || ''}|${team}`;
+
+      // CACHE HIT — DOM already shows the correct render; nothing to do.
+      if (_cpCache && _cpCache.key === cpKey && Date.now() - _cpCache.ts < _CP_TTL) return;
+
+      el.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i> Loading…</div>';
+
+      const dashKey = `${ctx.sessionId || ''}|${ctx.callingDate || ''}`;
       let data;
-      if (_dashCache && _dashCache.key === key) {
+      if (_dashCache && _dashCache.key === dashKey) {
         data = _dashCache.data;
       } else {
-        el.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i> Loading…</div>';
         data = await _dashFetchData(ctx);
-        _dashCache = { key, data };
+        _dashCache = { key: dashKey, data };
       }
       const sessLbl = ctx.sessionDate
         ? new Date(ctx.sessionDate + 'T00:00:00').toLocaleDateString('en-IN',
@@ -4460,6 +4636,7 @@ async function loadCoordinatorPerformance() {
           <div class="loading"><i class="fas fa-spinner"></i></div>
         </div>`;
       _dashRender(data, ctx);
+      _cpCache = { key: cpKey, ts: Date.now() };
     } catch (e) {
       console.error('loadCoordinatorPerformance', e);
       if (el) el.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Failed to load</p></div>';

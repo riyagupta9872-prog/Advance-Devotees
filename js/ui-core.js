@@ -12,7 +12,7 @@ auth.onAuthStateChanged(async (user) => {
     // ── Full AppState wipe — prevents role / team / session data leaking to the
     //    next account that logs in on the same browser tab.
     Object.assign(AppState, {
-      userRole: null, userTeam: null, userDept: null, userPosition: null,
+      userRole: null, userTeam: null, userPosition: null,
       userName: '', userId: null, profilePic: null,
       isAttSevaDev: false,
       canAllTeamCalling: false, canAllTeamReports: false, canManageAllTeams: false,
@@ -20,7 +20,7 @@ auth.onAuthStateChanged(async (user) => {
       _sessionExplicit: false,
       _dashboard: null, _autoSnap: null,
       callingData: [], attendanceCandidates: {}, sessionsCache: {},
-      filters: { sessionId: null, dept: '', team: '', callingBy: '', period: 'session', periodAnchor: null },
+      filters: { sessionId: null, team: '', callingBy: '', period: 'session', periodAnchor: null },
       // Reset currentTab so the next login resolves it fresh from the active
       // DOM panel — prevents a stale tab name from blocking loadDashboard
       // when the dashboard panel is actually visible.
@@ -133,7 +133,6 @@ auth.onAuthStateChanged(async (user) => {
     }
     AppState.userRole      = ud.role;
     AppState.userTeam      = ud.teamName   || null;
-    AppState.userDept      = ud.department || (ud.role === 'deptAdmin' ? (ud.teamName ? getDeptForTeam(ud.teamName) : '') : null);
     AppState.userPosition  = ud.position   || null;
     AppState.userName      = ud.name       || user.email;
     AppState.profilePic    = ud.profilePic || null;
@@ -170,6 +169,9 @@ auth.onAuthStateChanged(async (user) => {
     if (AppState.userRole === 'superAdmin') {
       subscribePendingSignups();
       // One-time data migrations — bust cache after so UI updates immediately
+      DB.migrateTeamNameOnce('Visakha', 'Vishakha').then(migrated => {
+        if (migrated) { DevoteeCache.bust(); if (typeof loadDashboard === 'function') loadDashboard(); }
+      }).catch(() => {});
       // Backfill the © "met Prabhuji" flag from existing completed meetings.
       DB.migrateMetPrabhujiOnce().then(migrated => {
         if (migrated) { DevoteeCache.bust(); if (typeof loadDevotees === 'function') loadDevotees(); }
@@ -249,6 +251,7 @@ async function doLogin(e) {
   try {
     await auth.signInWithEmailAndPassword(email, password);
   } catch (ex) {
+    if (_isFirestoreAssertionError(ex.message)) { _scheduleReload(); return; }
     const badCred = ['auth/wrong-password','auth/user-not-found','auth/invalid-credential','auth/invalid-email'];
     err.textContent = badCred.includes(ex.code) ? 'Invalid email or password' : ex.message;
     err.classList.add('show');
@@ -285,16 +288,13 @@ async function doSignup(e) {
     _resetBtn(); return;
   }
   try {
-    // Check if this email already has a pending signup request to avoid duplicates
-    const dupCheck = await fdb.collection('signupRequests')
-      .where('email', '==', email).where('status', '==', 'pending').limit(1).get();
-    if (!dupCheck.empty) {
-      showPendingApprovalScreen();
-      _resetBtn(); return;
-    }
-
+    // Create the Auth account first — only then are we authenticated enough
+    // to read/write Firestore (rules require request.auth != null).
+    // auth/email-already-in-use covers the duplicate-signup case, so no
+    // pre-auth or post-auth signupRequests read is needed here.
     const cred = await auth.createUserWithEmailAndPassword(email, password);
     await cred.user.updateProfile({ displayName: name });
+
     // First user EVER bootstraps as approved superAdmin. Everyone else lands
     // in signupRequests for super admin to approve.
     const existing = await fdb.collection('users').limit(2).get();
@@ -317,7 +317,11 @@ async function doSignup(e) {
     showPendingApprovalScreen();
     _resetBtn();
   } catch (ex) {
-    err.textContent = ex.code === 'auth/email-already-in-use' ? 'Email already registered' : ex.message;
+    if (_isFirestoreAssertionError(ex.message)) { _scheduleReload(); return; }
+    const msg = ex.code === 'auth/email-already-in-use'
+      ? 'This email is already registered. If your account is awaiting approval, please wait for the super admin to approve it.'
+      : ex.message;
+    err.textContent = msg;
     err.classList.add('show');
     _resetBtn();
   }
@@ -415,8 +419,8 @@ function renderSignupRequests() {
     const tb = b.createdAt?.toMillis?.() || 0;
     return tb - ta;
   });
-  const teamOptions = '<option value="">— No dept —</option>' +
-    TEAMS.map(d => `<option value="${d}">${d}</option>`).join('');
+  const teamOptions = '<option value="">— No team —</option>' +
+    TEAMS.map(t => `<option value="${t}">${t}</option>`).join('');
   el.innerHTML = rows.map(r => {
     const when = r.createdAt?.toDate
       ? r.createdAt.toDate().toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })
@@ -429,15 +433,14 @@ function renderSignupRequests() {
         <div class="signup-req-meta">
           <i class="fas fa-envelope"></i> ${r.email || '—'}
           &nbsp;·&nbsp; requested ${when}
-          ${r.requestedRole ? '&nbsp;·&nbsp; wants <strong>' + ((r.requestedRole === 'deptCoordinator' || r.requestedRole === 'teamAdmin') ? 'Dept Coordinator' : 'Facilitator') + '</strong>' : ''}
+          ${r.requestedRole ? '&nbsp;·&nbsp; wants <strong>' + ((r.requestedRole === 'deptCoordinator' || r.requestedRole === 'teamAdmin') ? 'Coordinator' : 'Facilitator') + '</strong>' : ''}
           ${r.requestedTeam ? ' for <strong>' + r.requestedTeam + '</strong>' : ''}
         </div>
       </div>
       <div class="signup-req-actions">
         <select id="srq-role-${r.id}" class="filter-select">
           <option value="serviceDevotee"${r.requestedRole==='serviceDevotee'?' selected':''}>Facilitator</option>
-          <option value="deptCoordinator"${(r.requestedRole==='deptCoordinator'||r.requestedRole==='teamAdmin')?' selected':''}>Dept Coordinator</option>
-          <option value="deptAdmin"${r.requestedRole==='deptAdmin'?' selected':''}>Dept Admin</option>
+          <option value="deptCoordinator"${(r.requestedRole==='deptCoordinator'||r.requestedRole==='teamAdmin')?' selected':''}>Coordinator</option>
           <option value="superAdmin">Super Admin</option>
         </select>
         <select id="srq-team-${r.id}" class="filter-select">
@@ -523,14 +526,12 @@ function openEditProfile() {
   document.getElementById('profile-pic-input').value = '';
   _renderProfilePicPreview(AppState.profilePic || null);
 
-  const isSuper  = AppState.userRole === 'superAdmin';
-  const isDeptAd = AppState.userRole === 'deptAdmin';
+  const isSuperAdmin = AppState.userRole === 'superAdmin';
   const teamSelect   = document.getElementById('edit-profile-team');
   const teamReadonly = document.getElementById('edit-profile-team-readonly');
   const teamNote     = document.getElementById('edit-profile-team-note');
-  const deptSelect   = document.getElementById('edit-profile-dept');
 
-  if (isSuper || isDeptAd) {
+  if (isSuperAdmin) {
     teamSelect.style.display   = '';
     teamReadonly.style.display = 'none';
     teamNote.style.display     = 'none';
@@ -540,12 +541,6 @@ function openEditProfile() {
     teamReadonly.style.display = '';
     teamReadonly.textContent   = AppState.userTeam || '— Not assigned —';
     teamNote.style.display     = '';
-  }
-  if (deptSelect) {
-    deptSelect.value = AppState.userDept || '';
-    // Only super admin and deptAdmin can set/change their dept
-    deptSelect.disabled = !(isSuper || isDeptAd);
-    document.getElementById('edit-profile-dept-group').style.display = (isSuper || isDeptAd) ? '' : 'none';
   }
 
   openModal('edit-profile-modal');
@@ -602,9 +597,8 @@ async function saveEditProfile() {
   const nameChanged = name !== oldName;
 
   const updates = { name, position, updatedAt: TS() };
-  if (AppState.userRole === 'superAdmin' || AppState.userRole === 'deptAdmin') {
-    updates.teamName   = document.getElementById('edit-profile-team').value || null;
-    updates.department = document.getElementById('edit-profile-dept')?.value || null;
+  if (AppState.userRole === 'superAdmin') {
+    updates.teamName = document.getElementById('edit-profile-team').value || null;
   }
   if (_pendingProfilePic !== undefined) updates.profilePic = _pendingProfilePic;
 
@@ -616,10 +610,7 @@ async function saveEditProfile() {
     }
     AppState.userName     = name;
     AppState.userPosition = position;
-    if (AppState.userRole === 'superAdmin' || AppState.userRole === 'deptAdmin') {
-      AppState.userTeam = updates.teamName;
-      AppState.userDept = updates.department || null;
-    }
+    if (AppState.userRole === 'superAdmin') AppState.userTeam = updates.teamName;
     if (_pendingProfilePic !== undefined) AppState.profilePic = _pendingProfilePic || null;
     document.getElementById('header-user-name').textContent = name;
     _applyHeaderAvatar();
@@ -645,11 +636,9 @@ function _applySidebarInfo() {
   if (role) {
     const r = AppState.userRole;
     const t = AppState.userTeam;
-    const d = AppState.userDept;
     const p = AppState.userPosition;
-    role.textContent = r === 'superAdmin'      ? 'Super Admin'
-      : r === 'deptAdmin'        ? (d ? `${d} · Dept Admin` : 'Dept Admin')
-      : (r === 'deptCoordinator' || r === 'teamAdmin') ? (t ? `${t} · Dept Coordinator` : 'Dept Coordinator')
+    role.textContent = r === 'superAdmin' ? 'Super Admin'
+      : (r === 'deptCoordinator' || r === 'teamAdmin') ? (t ? `${t} · Coordinator` : 'Coordinator')
       : (t ? `${t} · ${p || 'Facilitator'}` : (p || 'Facilitator'));
   }
   const pic = AppState.profilePic;
@@ -808,7 +797,24 @@ async function openSessionConfig() {
     document.getElementById('sc-session-type').value    = cfg?.sessionType  || 'regular';
     document.getElementById('sc-calling-date').value    = cfg?.callingDate  || '';
     document.getElementById('sc-attendance-date').value = cfg?.sessionDate  || '';
-    document.getElementById('sc-calling-window').checked = cfg?.callingWindowOpen === true;
+    // Reflect the EFFECTIVE state — the calling date drives it automatically
+    // (open for 24h starting that day), and a manual override (if still
+    // active — it lasts 24h from when it was toggled) wins over that.
+    const effectivelyOpen = (typeof isCallingWindowOpen === 'function') ? isCallingWindowOpen(cfg) : false;
+    document.getElementById('sc-calling-window').checked = effectivelyOpen;
+    const scHint = document.getElementById('sc-calling-window-hint');
+    if (scHint) {
+      const overrideAt = cfg?.callingWindowOverrideAt;
+      const overrideMs = overrideAt ? (overrideAt.toMillis ? overrideAt.toMillis() : new Date(overrideAt).getTime()) : 0;
+      const overrideActive = overrideMs && !isNaN(overrideMs) && (Date.now() - overrideMs) < 24 * 60 * 60 * 1000;
+      if (overrideActive) {
+        scHint.textContent = cfg.callingWindowOverride
+          ? 'Manually forced OPEN — overrides the calling date for 24 hours from when you switched it on, then reverts to automatic.'
+          : 'Manually forced CLOSED — overrides the calling date for 24 hours from when you switched it off, then reverts to automatic.';
+      } else {
+        scHint.textContent = 'Opens automatically for 24 hours on the calling date. Use this toggle to override that for 24 hours if needed.';
+      }
+    }
   } catch (_) {}
   openModal('session-config-modal');
 }
@@ -1005,21 +1011,21 @@ function renderUserMgmtList() {
     return;
   }
 
-  // Group by role: Super Admins → Dept Admins → Dept Coordinators → Facilitators.
-  const groups = { superAdmin: [], deptAdmin: [], deptCoordinator: [], serviceDevotee: [], other: [] };
+  // Group by role for clear bifurcation: Super Admins → Coordinators → Facilitators.
+  const groups = { superAdmin: [], deptCoordinator: [], serviceDevotee: [], other: [] };
   filtered.forEach(u => {
-    const role = u.role === 'teamAdmin' ? 'deptCoordinator' : u.role; // normalize legacy role
-    const k = ['superAdmin','deptAdmin','deptCoordinator','serviceDevotee'].includes(role) ? role : 'other';
+    const k = u.role === 'superAdmin' || u.role === 'serviceDevotee' ? u.role
+      : (u.role === 'deptCoordinator' || u.role === 'teamAdmin') ? 'deptCoordinator'
+      : 'other';
     groups[k].push(u);
   });
   Object.values(groups).forEach(arr => arr.sort((a, b) => (a.name || '').localeCompare(b.name || '')));
 
   const sectionDef = [
-    { key: 'superAdmin',      label: 'Super Admins',       icon: 'fa-user-shield' },
-    { key: 'deptAdmin',       label: 'Dept Admins',        icon: 'fa-sitemap' },
-    { key: 'deptCoordinator', label: 'Dept Coordinators',  icon: 'fa-user-tie' },
-    { key: 'serviceDevotee',  label: 'Facilitators',       icon: 'fa-headset' },
-    { key: 'other',           label: 'Other',              icon: 'fa-user' },
+    { key: 'superAdmin',     label: 'Super Admins',  icon: 'fa-user-shield' },
+    { key: 'deptCoordinator', label: 'Coordinators',  icon: 'fa-user-tie' },
+    { key: 'serviceDevotee', label: 'Facilitators',  icon: 'fa-headset' },
+    { key: 'other',          label: 'Other',         icon: 'fa-user' },
   ];
 
   const sections = sectionDef.filter(s => groups[s.key].length).map(s => {
@@ -1035,14 +1041,12 @@ function renderUserMgmtList() {
 }
 
 function _umRowHtml(u) {
-  const roleLabel = u.role === 'superAdmin'    ? 'Super Admin'
-    : u.role === 'deptAdmin'       ? 'Dept Admin'
-    : (u.role === 'deptCoordinator' || u.role === 'teamAdmin') ? 'Dept Coordinator' : 'Facilitator';
+  const roleLabel = u.role === 'superAdmin' ? 'Super Admin'
+    : (u.role === 'deptCoordinator' || u.role === 'teamAdmin') ? 'Coordinator' : 'Facilitator';
   const customTitle = u.position && u.position.toLowerCase() !== roleLabel.toLowerCase() ? u.position : '';
   const tags = [];
   if (u.teamName)   tags.push(`<span class="um-tag um-tag-team">${u.teamName}</span>`);
   if (customTitle)  tags.push(`<span class="um-tag um-tag-title">${customTitle}</span>`);
-  if (u.department)        tags.push(`<span class="um-tag" style="background:#e0f2fe;color:#0369a1">${u.department}</span>`);
   if (u.isAttSevaDev)      tags.push('<span class="um-booster" title="Live attendance across teams">Att.Seva</span>');
   if (u.canBackDateAttendance) tags.push('<span class="um-booster" title="Can mark attendance on past sessions">Back-date</span>');
   if (u.canAllTeamCalling) tags.push('<span class="um-booster" title="Cross-team calling submit">All-Call</span>');
@@ -1067,10 +1071,10 @@ function openUserAction(uid) {
   const av = document.getElementById('ua-avatar');
   if (av) av.textContent = (typeof initials === 'function') ? initials(u.name || u.email) : (u.name || u.email || 'U').charAt(0).toUpperCase();
   document.getElementById('ua-user-id').value              = uid;
-  document.getElementById('ua-position').value             = u.position   || '';
-  document.getElementById('ua-team').value                 = u.teamName   || '';
-  document.getElementById('ua-dept').value                 = u.department || '';
-  document.getElementById('ua-role').value                 = u.role       || 'serviceDevotee';
+  document.getElementById('ua-position').value             = u.position || '';
+  document.getElementById('ua-mobile').value               = u.mobile   || '';
+  document.getElementById('ua-team').value                 = u.teamName || '';
+  document.getElementById('ua-role').value                 = (u.role === 'teamAdmin' ? 'deptCoordinator' : u.role) || 'serviceDevotee';
   document.getElementById('ua-att-seva').checked           = !!u.isAttSevaDev;
   document.getElementById('ua-can-backdate').checked       = !!u.canBackDateAttendance;
   document.getElementById('ua-can-all-calling').checked    = !!u.canAllTeamCalling;
@@ -1131,27 +1135,23 @@ function _uaWireSummary() {
 function _uaRefreshSummary() {
   const role     = document.getElementById('ua-role').value;
   const team     = document.getElementById('ua-team').value;
-  const deptVal  = document.getElementById('ua-dept')?.value || '';
   const attSeva  = document.getElementById('ua-att-seva').checked;
   const allCall  = document.getElementById('ua-can-all-calling').checked;
   const allRpt   = document.getElementById('ua-can-all-reports').checked;
   const mgrAll   = document.getElementById('ua-can-manage-all').checked;
-  const roleLabel = role === 'superAdmin'    ? 'Super Admin'
-    : role === 'deptAdmin'       ? 'Dept Admin'
-    : (role === 'deptCoordinator' || role === 'teamAdmin') ? 'Dept Coordinator' : 'Facilitator';
+  const roleLabel = role === 'superAdmin' ? 'Super Admin'
+    : (role === 'deptCoordinator' || role === 'teamAdmin') ? 'Coordinator' : 'Facilitator';
   const parts = [];
   if (role === 'superAdmin') {
-    parts.push('Full power — every tab, every dept, manages users, can wipe data.');
-  } else if (role === 'deptAdmin') {
-    parts.push(`<strong>Dept Admin</strong>${deptVal ? ' of <strong>' + deptVal + '</strong>' : ''} — all depts + Calling Mgmt + Meetings tabs.`);
+    parts.push('Full power — every tab, every team, manages users, can wipe data.');
   } else {
     parts.push(`<strong>${roleLabel}</strong>${team ? ' of <strong>' + team + '</strong>' : ''}`);
-    const owns = (role === 'deptCoordinator' || role === 'teamAdmin') ? 'Manages their own dept\'s devotees, calling, attendance.' : 'Marks calling + attendance for their own dept.';
+    const owns = (role === 'deptCoordinator' || role === 'teamAdmin') ? 'Manages their own team\'s devotees, calling, attendance.' : 'Marks calling + attendance for their own team.';
     parts.push(owns);
-    if (mgrAll)      parts.push('Lite super admin: writes across <strong>all departments</strong> + Calling Mgmt + Meetings tabs.');
-    else if (allCall) parts.push('Can submit calling on behalf of <strong>any department</strong> (Team Calling tab).');
-    if (allRpt && !mgrAll)  parts.push('Sees reports across <strong>all departments</strong> (read-only).');
-    if (attSeva)     parts.push('Live Attendance for <strong>all departments</strong>.');
+    if (mgrAll)      parts.push('Lite super admin: writes across <strong>all teams</strong> + Calling Mgmt + Meetings tabs.');
+    else if (allCall) parts.push('Can submit calling on behalf of <strong>any team</strong> (Team Calling tab).');
+    if (allRpt && !mgrAll)  parts.push('Sees reports across <strong>all teams</strong> (read-only).');
+    if (attSeva)     parts.push('Live Attendance for <strong>all teams</strong>.');
   }
   const el = document.getElementById('ua-summary-text');
   if (el) el.innerHTML = parts.join(' ');
@@ -1160,8 +1160,8 @@ function _uaRefreshSummary() {
 async function doSaveUserAction() {
   const uid               = document.getElementById('ua-user-id').value;
   const position          = document.getElementById('ua-position').value.trim() || null;
+  const mobile            = document.getElementById('ua-mobile').value.trim() || null;
   const teamName          = document.getElementById('ua-team').value || null;
-  const department        = document.getElementById('ua-dept')?.value || null;
   const role              = document.getElementById('ua-role').value;
   const isAttSevaDev          = document.getElementById('ua-att-seva').checked;
   const canBackDateAttendance = document.getElementById('ua-can-backdate').checked;
@@ -1171,14 +1171,14 @@ async function doSaveUserAction() {
   if (!uid) return;
   try {
     await fdb.collection('users').doc(uid).update({
-      position, teamName, department, role,
+      position, mobile, teamName, role,
       isAttSevaDev, canBackDateAttendance, canAllTeamCalling, canAllTeamReports, canManageAllTeams,
       updatedAt: TS(),
     });
     // reflect in local cache
     const u = _umUsers.find(x => x.uid === uid);
     if (u) {
-      u.position = position; u.teamName = teamName; u.department = department; u.role = role;
+      u.position = position; u.mobile = mobile; u.teamName = teamName; u.role = role;
       u.isAttSevaDev = isAttSevaDev;
       u.canBackDateAttendance = canBackDateAttendance;
       u.canAllTeamCalling = canAllTeamCalling;
@@ -1217,15 +1217,11 @@ function applyRoleUI() {
   document.getElementById('header-user-name').textContent = AppState.userName;
   _applyHeaderAvatar();
   const pill = document.getElementById('header-role-pill');
-  const pos  = AppState.userPosition;
-  const dept = AppState.userDept;
+  const pos = AppState.userPosition;
   pill.textContent = role === 'superAdmin' ? 'Super Admin'
-    : role === 'deptAdmin'  ? (dept ? `${dept} - Dept Admin` : 'Dept Admin')
-    : (role === 'deptCoordinator' || role === 'teamAdmin') ? (team ? `${team} - Dept Coordinator` : 'Dept Coordinator')
+    : (role === 'deptCoordinator' || role === 'teamAdmin') ? (team ? `${team} - Coordinator` : 'Coordinator')
     : (team ? `${team} - ${pos || 'Facilitator'}` : (pos || 'Facilitator'));
-  pill.style.background = role === 'superAdmin' ? '#fde68a'
-    : role === 'deptAdmin'  ? '#e0f2fe'
-    : (role === 'deptCoordinator' || role === 'teamAdmin') ? '#fef9c3' : '#fffbeb';
+  pill.style.background = role === 'superAdmin' ? '#fde68a' : (role === 'deptCoordinator' || role === 'teamAdmin') ? '#fef9c3' : '#fffbeb';
 
   // Always set both show AND hide — never rely on "was already hidden".
   // If this runs after an account switch, elements must be explicitly
@@ -1237,18 +1233,18 @@ function applyRoleUI() {
     el.style.display = isSuper ? '' : 'none';
   });
 
-  // serviceDevotee (Facilitator) gets same tab access as deptCoordinator — all dept tabs.
+  // serviceDevotee (Facilitator) gets same tab access as deptCoordinator — all team tabs.
   // Meetings + calling-mgmt are super-admin tools; canManageAllTeams users
   // ALSO get them ("lite super admin" delegation).
   const tabs = {
-    dashboard:      ['superAdmin', 'deptAdmin', 'deptCoordinator', 'teamAdmin', 'serviceDevotee'],
-    devotees:       ['superAdmin', 'deptAdmin', 'deptCoordinator', 'teamAdmin', 'serviceDevotee'],
-    calling:        ['superAdmin', 'deptAdmin', 'deptCoordinator', 'teamAdmin', 'serviceDevotee'],
-    attendance:     ['superAdmin', 'deptAdmin', 'deptCoordinator', 'teamAdmin', 'serviceDevotee'],
-    care:           ['superAdmin', 'deptAdmin', 'deptCoordinator', 'teamAdmin', 'serviceDevotee'],
-    events:         ['superAdmin', 'deptAdmin', 'deptCoordinator', 'teamAdmin', 'serviceDevotee'],
-    meetings:       ['superAdmin', 'deptAdmin'],
-    'calling-mgmt': ['superAdmin', 'deptAdmin'],
+    dashboard:      ['superAdmin', 'deptCoordinator', 'teamAdmin', 'serviceDevotee'],
+    devotees:       ['superAdmin', 'deptCoordinator', 'teamAdmin', 'serviceDevotee'],
+    calling:        ['superAdmin', 'deptCoordinator', 'teamAdmin', 'serviceDevotee'],
+    attendance:     ['superAdmin', 'deptCoordinator', 'teamAdmin', 'serviceDevotee'],
+    care:           ['superAdmin', 'deptCoordinator', 'teamAdmin', 'serviceDevotee'],
+    events:         ['superAdmin', 'deptCoordinator', 'teamAdmin', 'serviceDevotee'],
+    meetings:       ['superAdmin'],
+    'calling-mgmt': ['superAdmin'],
   };
   const liteSuperAdmin = (typeof canCrossTeamManage === 'function' && canCrossTeamManage());
   const isAllowed = (tab) => {
@@ -1282,7 +1278,7 @@ function applyRoleUI() {
 
   // Calling sub-tab button visibility by role:
   // "Calls" = personal calling → deptCoordinator + serviceDevotee only (superAdmin doesn't do personal calling)
-  // "Team Calling" = oversight view → deptCoordinator + superAdmin + delegated cross-dept callers
+  // "Team Calling" = oversight view → deptCoordinator + superAdmin + delegated cross-team callers
   const canCrossCalling = (typeof canCrossTeamCalling === 'function') ? canCrossTeamCalling() : (role === 'superAdmin');
   document.getElementById('calling-calls-btn')?.classList.toggle('hidden', role === 'superAdmin');
   document.getElementById('calling-team-btn')?.classList.toggle('hidden', role === 'serviceDevotee' && !canCrossCalling);
@@ -1567,6 +1563,7 @@ async function initApp() {
   loadDevotees();
   loadCallingPersonsFilter();
   loadBirthdays();
+  loadAnniversaries();
   initReportsSessionFilter?.();
   initAllPickers();
   initSheetYearSelector();
@@ -1605,28 +1602,7 @@ async function initMasterFilterBar() {
     delete teamChipBox.dataset.locked;
   }
 
-  // Lock dept chip for deptAdmin and deptCoordinator (they can't switch departments)
-  const deptChip    = document.getElementById('mfb-dept-chip');
-  const deptChipBox = document.getElementById('fr-chip-dept');
-  const myDept      = AppState.userDept || (isCoordinator() ? AppState.userTeam : null);
-  const deptLocked  = (isDeptAdmin() || isCoordinator()) && myDept && !canChangeTeamFilter();
-  if (deptLocked) {
-    if (deptChipBox) deptChipBox.dataset.locked = 'true';
-    if (deptChip) {
-      deptChip.style.display = '';
-      deptChip.innerHTML = `<i class="fas fa-lock" style="font-size:.7rem"></i> ${myDept}`;
-    }
-    AppState.filters.dept = myDept;
-  } else if (deptChipBox) {
-    delete deptChipBox.dataset.locked;
-  }
-
-  // Hide Team chip when departments have no sub-teams (flat dept structure)
-  const hasSubTeams = Object.values(DEPARTMENTS).some(arr => arr.length > 0);
-  if (!hasSubTeams && teamChipBox) teamChipBox.style.display = 'none';
-
   // Populate dropdown panels
-  _mfbReloadDeptOptions();
   _mfbReloadTeamOptions();
   await _mfbReloadSessionOptions();
   _mfbReloadCallingByOptions();
@@ -1670,14 +1646,9 @@ function _frToggle(event, chip) {
   if (event?.target?.closest('.fr-chip-clear')) return;
   // Locked team chip (non-superAdmin) is non-interactive
   if (chip === 'team') {
-    // deptCoordinator is locked everywhere EXCEPT the Devotees tab (where they can browse all depts).
-    const isLocked = AppState.userRole && AppState.userRole !== 'superAdmin' && !isDeptAdmin() && AppState.userTeam && AppState.currentTab !== 'devotees';
+    // deptCoordinator is locked everywhere EXCEPT the Devotees tab (where they can browse all teams).
+  const isLocked = AppState.userRole && AppState.userRole !== 'superAdmin' && AppState.userTeam && AppState.currentTab !== 'devotees';
     if (isLocked) return;
-  }
-  // Locked dept chip — deptAdmin and deptCoordinator cannot change their department
-  if (chip === 'dept') {
-    const deptBox = document.getElementById('fr-chip-dept');
-    if (deptBox?.dataset.locked === 'true') return;
   }
   const dd = document.getElementById('fr-dropdown-' + chip);
   if (!dd) return;
@@ -1732,14 +1703,6 @@ function _frInitOutsideClose() {
 }
 
 // Item-click handlers — called inline from generated dropdown items.
-function _frPickDept(value) {
-  const hasSubTeams = Object.values(DEPARTMENTS).some(arr => arr.length > 0);
-  // In flat structure (no sub-teams), team = dept to keep DB queries consistent
-  dispatchFilters({ dept: value || '', team: hasSubTeams ? '' : (value || '') });
-  _frCloseAll();
-  _mfbReloadTeamOptions?.();
-  _mfbReloadCallingByOptions?.();
-}
 function _frPickTeam(value) {
   dispatchFilters({ team: value || '' });
   _frCloseAll();
@@ -1765,40 +1728,20 @@ function _frPickSession(dateStr, docId) {
   _frCloseAll();
 }
 
-// Repopulate Dept dropdown.
-function _mfbReloadDeptOptions() {
-  const list = document.getElementById('fr-dropdown-list-dept');
+// Repopulate Team dropdown from TEAMS array (single source of truth).
+function _mfbReloadTeamOptions() {
+  const list = document.getElementById('fr-dropdown-list-team');
   if (!list) return;
-  const current = AppState.filters?.dept || '';
-  const items = [{ value: '', label: 'All Departments' }, ...TEAMS.map(d => ({ value: d, label: d }))];
+  const current = AppState.filters?.team || '';
+  const items = [{ value: '', label: 'All Teams' }, ...TEAMS.map(t => ({ value: t, label: t }))];
   list.innerHTML = items.map(it => {
     const safe = it.value.replace(/'/g, "\\'");
     return `<div class="fr-dropdown-item${it.value === current ? ' active' : ''}"
                  data-value="${it.value}"
-                 onclick="_frPickDept('${safe}')">
+                 onclick="_frPickTeam('${safe}')">
               <span class="fr-dropdown-item-label">${it.label}</span>
             </div>`;
   }).join('');
-}
-
-// Repopulate Department dropdown (departments are the leaf units — no sub-teams).
-function _mfbReloadTeamOptions() {
-  const list = document.getElementById('fr-dropdown-list-team');
-  if (!list) return;
-  const current    = AppState.filters?.team || '';
-  const filterDept = AppState.filters?.dept || '';
-  // When a dept is selected, only show that single dept; otherwise show all 4.
-  const visible = filterDept ? [filterDept] : TEAMS;
-  let html = `<div class="fr-dropdown-item${current === '' ? ' active' : ''}" data-value="" onclick="_frPickTeam('')">
-                <span class="fr-dropdown-item-label">All Departments</span>
-              </div>`;
-  visible.forEach(t => {
-    const safe = t.replace(/'/g, "\\'");
-    html += `<div class="fr-dropdown-item${t === current ? ' active' : ''}" data-value="${t}" onclick="_frPickTeam('${safe}')">
-               <span class="fr-dropdown-item-label">${t}</span>
-             </div>`;
-  });
-  list.innerHTML = html;
 }
 
 async function _mfbReloadSessionOptions() {
@@ -1820,7 +1763,7 @@ async function _mfbReloadSessionOptions() {
                     data-value="${u.session_date}"
                     onclick="_frPickSession('${u.session_date}','${u.id}')">
                  <span class="fr-dropdown-item-label">${lbl}</span>
-                 <span class="fr-dropdown-item-sub">Upcoming</span>
+                 <span class="fr-dropdown-item-sub">Next Session</span>
                </div>
                <div class="fr-dropdown-divider"></div>`;
     }
@@ -1882,8 +1825,8 @@ function _mfbUpdateCaption() {
   if (!cap) return;
   const f = AppState.filters || {};
   const parts = [];
-  if (f.dept)      parts.push(`<strong>${f.dept}</strong>`);
-  else if (!f.team) parts.push('all departments');
+  if (f.team)      parts.push(`<strong>${f.team}</strong> team`);
+  else             parts.push('all teams');
   if (f.callingBy) parts.push(`called by <strong>${f.callingBy}</strong>`);
   if (f.sessionId) {
     const lbl = new Date(f.sessionId + 'T00:00:00')
@@ -1900,7 +1843,7 @@ function _mfbUpdateCaption() {
 // Inactive: grey outline, hides the ✕ button.
 function _frRefreshChips() {
   const f = AppState.filters || {};
-  // deptCoordinator is locked everywhere EXCEPT the Devotees tab (where they can browse all depts).
+  // deptCoordinator is locked everywhere EXCEPT the Devotees tab (where they can browse all teams).
   const isLocked = AppState.userRole && AppState.userRole !== 'superAdmin' && AppState.userTeam && AppState.currentTab !== 'devotees';
 
   // Session chip
@@ -1915,26 +1858,6 @@ function _frRefreshChips() {
     } else {
       sVal.textContent = '';
       sChip.dataset.active = 'false';
-    }
-  }
-
-  // Dept chip
-  const dChip = document.getElementById('fr-chip-dept');
-  const dVal  = document.getElementById('fr-dept-value');
-  const dClr  = document.getElementById('fr-dept-clear');
-  const dChipBox = dChip?.closest('.fr-chip-wrap') || dChip;
-  if (dChip && dVal) {
-    const deptLocked = isDeptAdmin() && AppState.userDept;
-    if (deptLocked) {
-      if (dClr) dClr.style.display = 'none';
-    }
-    if (f.dept) {
-      dVal.textContent = f.dept;
-      dChip.dataset.active = 'true';
-      if (!deptLocked && dClr) dClr.style.display = '';
-    } else {
-      dVal.textContent = '';
-      dChip.dataset.active = 'false';
     }
   }
 
@@ -1976,7 +1899,7 @@ function _frRefreshChips() {
   // "Clear all" visible only when at least one non-locked filter is active
   const clearAll = document.getElementById('fr-clear-all');
   if (clearAll) {
-    const anyActive = !!f.sessionId || (!!f.dept && !isDeptAdmin()) || (!!f.team && !isLocked) || !!f.callingBy;
+    const anyActive = !!f.sessionId || (!!f.team && !isLocked) || !!f.callingBy;
     clearAll.style.display = anyActive ? '' : 'none';
   }
 }
@@ -1985,16 +1908,9 @@ function _frClearSession(e) {
   e?.stopPropagation();
   dispatchFilters({ sessionId: null, _sessionDocId: null });
 }
-function _frClearDept(e) {
-  e?.stopPropagation();
-  if (isDeptAdmin()) return; // deptAdmin can't clear their dept
-  dispatchFilters({ dept: '', team: '' });
-  _mfbReloadTeamOptions?.();
-  _mfbReloadCallingByOptions?.();
-}
 function _frClearTeam(e) {
   e?.stopPropagation();
-  if (AppState.userRole === 'deptCoordinator' || AppState.userRole === 'teamAdmin') return; // deptCoordinator is always locked to their dept
+  if (AppState.userRole && AppState.userRole !== 'superAdmin') return;
   dispatchFilters({ team: '' });
   _mfbReloadCallingByOptions?.();
 }
@@ -2003,13 +1919,11 @@ function _frClearBy(e) {
   dispatchFilters({ callingBy: '' });
 }
 function _frClearAll() {
-  // deptCoordinator is locked everywhere EXCEPT the Devotees tab (where they can browse all depts).
+  // deptCoordinator is locked everywhere EXCEPT the Devotees tab (where they can browse all teams).
   const isLocked = AppState.userRole && AppState.userRole !== 'superAdmin' && AppState.userTeam && AppState.currentTab !== 'devotees';
   const patch = { callingBy: '' };
   if (!isLocked) patch.team = '';
-  if (!isDeptAdmin()) patch.dept = '';
   dispatchFilters(patch);
-  _mfbReloadTeamOptions?.();
   _mfbReloadCallingByOptions?.();
 }
 
@@ -2022,7 +1936,6 @@ function _frRefreshActiveItems() {
       it.classList.toggle('active', v === (currentVal || ''));
     });
   };
-  apply('#fr-dropdown-list-dept',    f.dept);
   apply('#fr-dropdown-list-team',    f.team);
   apply('#fr-dropdown-list-session', f.sessionId);
   apply('#fr-dropdown-list-by',      f.callingBy);
@@ -2037,9 +1950,6 @@ function _mfbOnFiltersChanged(e) {
   const f = AppState.filters;
   // Re-highlight the active item in each custom dropdown panel
   _frRefreshActiveItems();
-  // When dept filter changes, repopulate the team dropdown to match the dept.
-  const deptChanged = e?.detail && e.detail.before && e.detail.before.dept !== AppState.filters.dept;
-  if (deptChanged) _mfbReloadTeamOptions?.();
   // Re-sync the chip text/state from AppState.filters. Without this, a
   // locked-role user who taps another team sees the chip stay at their
   // pick even though dispatchFilters silently forced it back. Result:
@@ -2134,7 +2044,7 @@ function clearFieldError(id) {
 // ── DEVOTEE PICKER ────────────────────────────────────
 function initAllPickers() {
   setupPicker('picker-reference',   'f-reference');
-  setupUserPicker('picker-calling-by',  'f-calling-by',  () => document.getElementById('f-team')?.value || '');
+  setupUserPicker('picker-calling-by',  'f-calling-by',  () => '');
   setupUserPicker('picker-facilitator', 'f-facilitator', () => '');
 }
 
@@ -2210,7 +2120,7 @@ function setupUserPicker(containerId, hiddenId, getTeam) {
     }
     dropdown.innerHTML = results.slice(0, 12).map(u => {
       const display = (u.name || u.email || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-      const meta = `${u.teamName || ''}${u.teamName ? ' · ' : ''}${(u.role === 'deptCoordinator' || u.role === 'teamAdmin') ? 'Dept Coordinator' : 'Calling Facilitator'}`;
+      const meta = `${u.teamName || ''}${u.teamName ? ' · ' : ''}${(u.role === 'deptCoordinator' || u.role === 'teamAdmin') ? 'Coordinator' : 'Calling Facilitator'}`;
       return `<div class="picker-option" onclick="selectPicker('${containerId}','${hiddenId}','${display}','${u.uid}')">
         <span>${u.name || u.email || '(no name)'}</span>
         <span class="picker-team">${meta}</span>
@@ -2356,6 +2266,25 @@ async function loadBirthdays() {
 }
 function closeBirthdayPopup() { document.getElementById('birthday-popup').classList.add('hidden'); }
 
+async function loadAnniversaries() {
+  try {
+    const annivs = await DB.getCareAnniversaries();
+    if (!annivs.length) return;
+    document.getElementById('anniversary-list').innerHTML = annivs.map(d => `
+      <div class="birthday-item">
+        <div class="devotee-avatar" style="width:38px;height:38px;font-size:.9rem">${initials(d.name)}</div>
+        <div class="birthday-name-wrap">
+          <span class="birthday-name">${d.name}</span>
+          ${d.team_name ? `<span class="birthday-team">${d.team_name}</span>` : ''}
+        </div>
+        <span class="birthday-date">${formatAnniversary(d.marriage_anniversary)}</span>
+        ${contactIcons(d.mobile)}
+      </div>`).join('');
+    document.getElementById('anniversary-popup').classList.remove('hidden');
+  } catch (_) {}
+}
+function closeAnniversaryPopup() { document.getElementById('anniversary-popup').classList.add('hidden'); }
+
 // ── BOTTOM NAV ARROWS (legacy — kept as no-ops since 5-tab nav has no scroll) ─
 function _bnavScroll(dir) {
   const el = document.getElementById('bnav-scroll');
@@ -2383,8 +2312,8 @@ function switchTab(tab, btn) {
   });
   _bnavScrollActive();
   AppState.currentTab = tab;
-  // When deptCoordinator leaves Devotees tab onto a dept-scoped tab, snap the master
-  // Dept filter back to their own dept (Devotees is the only place they roam).
+  // When deptCoordinator leaves Devotees tab onto a team-scoped tab, snap the master
+  // Team filter back to their own team (Devotees is the only place they roam).
   if ((AppState.userRole === 'deptCoordinator' || AppState.userRole === 'teamAdmin') && AppState.userTeam && tab !== 'devotees'
       && AppState.filters && AppState.filters.team !== AppState.userTeam) {
     AppState.filters.team = AppState.userTeam;
@@ -2447,24 +2376,23 @@ const TAB_VIEWS = {
     { key: 'care-absent',     label: 'Absent',                icon: 'fa-user-times' },
     { divider: true, label: 'MORE' },
     { key: 'serious',       label: 'Serious Analysis',        icon: 'fa-star' },
-    { key: 'teams',         label: 'Team Leaderboard',        icon: 'fa-trophy' },
     { key: 'trends',        label: 'Trends',                  icon: 'fa-chart-line' },
-    { key: 'accuracy',      label: 'Accuracy',                icon: 'fa-bullseye' },
   ],
   'calling-mgmt': [
     { key: 'calling',       label: 'Calling List',     icon: 'fa-phone-alt' },
     { key: 'newcomers',     label: 'New Comers',       icon: 'fa-user-plus' },
+    { key: 'unassigned',    label: 'Unassigned',       icon: 'fa-user-slash' },
     { key: 'online',        label: 'Online Class',     icon: 'fa-laptop' },
     { key: 'notinterested', label: 'Not Interested',   icon: 'fa-times-circle' },
     { key: 'festival',      label: 'Festival Calling', icon: 'fa-star' },
   ],
   meetings: [
-    { key: 'overdue',   label: 'Overdue',      icon: 'fa-exclamation-circle' },
-    { key: 'scheduled', label: 'Scheduled',    icon: 'fa-calendar-alt' },
+    { key: 'scheduled', label: 'Schedule',     icon: 'fa-calendar-alt' },
+    { key: 'my-log',    label: 'My Log',       icon: 'fa-clipboard-list' },
     { key: 'completed', label: 'Completed',    icon: 'fa-check-circle' },
     { key: 'recent',    label: 'Recently Met', icon: 'fa-history' },
+    { key: 'overdue',   label: 'Overdue',      icon: 'fa-exclamation-circle' },
     { key: 'ptm',       label: 'PTM',          icon: 'fa-users' },
-    { key: 'my-log',    label: 'My Log',       icon: 'fa-clipboard-list' },
   ],
   // Note: "meetings" tab is labelled "Connecting" in the UI.
 };
@@ -2496,10 +2424,9 @@ const _SUBTAB_STYLES = {
   'late':          { bg:'#fef2f2', color:'#b91c1c' },
   'newcomers':     { bg:'#fef3c7', color:'#92400e' },
   'serious':       { bg:'#f5f3ff', color:'#6d28d9' },
-  'teams':         { bg:'#fffbeb', color:'#b45309' },
   'trends':        { bg:'#ecfdf5', color:'#065f46' },
-  'accuracy':      { bg:'#eff6ff', color:'#1e40af' },
   'calling':       { bg:'#eff6ff', color:'#1d4ed8' },
+  'unassigned':    { bg:'#fef2f2', color:'#7f1d1d' },
   'online':        { bg:'#f0fdf4', color:'#15803d' },
   'notinterested': { bg:'#fef2f2', color:'#b91c1c' },
   'festival':      { bg:'#fffbeb', color:'#b45309' },
@@ -2709,7 +2636,7 @@ function _maybeRestoreLiveSession() {
 // pickers, so auto-snapping the global Session for them does nothing useful
 // (and would mislead users with a "Showing last completed session" toast).
 function _isSessionAnchoredReportsView(tab, view) {
-  const callingLiveViews = ['calls', 'said-coming', 'not-coming-present'];
+  const callingLiveViews = ['calls', 'team-calling', 'history', 'said-coming', 'not-coming-present'];
   return (tab === 'attendance' && view !== 'live')
       || (tab === 'calling' && !callingLiveViews.includes(view));
 }
@@ -2718,7 +2645,7 @@ function _isSessionAnchoredReportsView(tab, view) {
 // auto-restore logic when leaving Reports.
 function _isLiveSessionView(tab, view) {
   return (tab === 'attendance' && view === 'live')
-      || (tab === 'calling' && view === 'calls');
+      || (tab === 'calling' && (view === 'calls' || view === 'team-calling'));
 }
 
 // Maps a TAB_VIEWS key to the underlying sub-tab + sub-panel for that tab.
@@ -2793,9 +2720,7 @@ async function applyTabView(tab, view) {
         individual: 'individual-reports',
         newcomers:  'newcomers-report',
         serious:    'serious-analysis',
-        teams:      'team-leaderboard',
         trends:     'trends',
-        accuracy:   'att-accuracy',
         // coordinator is handled above — not routed through the reports sub-tab
       })[view];
       if (subId) {
@@ -2804,7 +2729,6 @@ async function applyTabView(tab, view) {
         if (subId === 'attendance-detail'  && typeof loadYearlySheet       === 'function') loadYearlySheet();
         if (subId === 'late-comers'        && typeof loadLateComersReport  === 'function') loadLateComersReport();
         if (subId === 'individual-reports' && typeof _loadIndividualReports === 'function') _loadIndividualReports();
-        if (subId === 'att-accuracy'       && typeof loadAttAccuracyReport  === 'function') loadAttAccuracyReport();
       }
     }
   } else if (tab === 'calling-mgmt') {
@@ -2961,7 +2885,7 @@ function switchCallingSubTab(btn, sub) {
   document.getElementById('calling-panel-not-coming-present')?.classList.toggle('active',sub === 'not-coming-present');
   AppState._callingSubTab = sub;
   const _callingLabels = {
-    'calls': 'Your Calling Sewa', 'team-calling': 'Your Dept Calling',
+    'calls': 'Your Calling Sewa', 'team-calling': 'Your Team Calling',
     'reports': 'Calling Reports', 'history': 'Calling History',
     'said-coming': 'Said Coming', 'not-coming-present': 'Surprise Present',
   };

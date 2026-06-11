@@ -1,7 +1,7 @@
 {
-  "name": "Advance Devotees – Department Management",
-  "short_name": "Adv Devotees",
-  "description": "Department-based devotee management for Advance Devotees",
+  "name": "Advance Devotees – Devotee Management",
+  "short_name": "Advance Devotees",
+  "description": "Sunday class attendance & devotee management for Advance Devotees",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

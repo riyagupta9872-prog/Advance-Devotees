@@ -26,10 +26,7 @@ function toSnake(d) {
     date_of_joining:     d.dateOfJoining || null,
     chanting_rounds:     d.chantingRounds || 0,
     kanthi:              d.kanthi || 0,
-    vaishnav_dress:      d.vaishnavDress || 0,
-    gender:              d.gender || null,
-    marriage_anniversary: d.marriageAnniversary || null,
-    department:          d.department || null,
+    gopi_dress:          d.gopiDress || 0,
     team_name:           d.teamName || null,
     devotee_status:      d.devoteeStatus || 'Expected to be Serious',
     facilitator:         d.facilitator || null,
@@ -62,6 +59,11 @@ function toSnake(d) {
     is_not_interested:      d.isNotInterested || false,
     not_interested_at:      tsToISO(d.notInterestedAt),
     prior_sessions_attended: d.priorSessionsAttended || 0,
+    // Department management fields
+    gender:                 d.gender || null,
+    marital_status:         d.maritalStatus || null,
+    marriage_anniversary:   d.marriageAnniversary || null,
+    team:                   d.team || null,
     // True once this devotee has had a completed personal meeting with Prabhuji.
     // Drives the © "met" badge next to their name. Toggled off via the
     // Completed-meetings tab "disconnect" action.
@@ -80,11 +82,10 @@ function toCamel(f) {
     dateOfJoining:     f.date_of_joining || null,
     chantingRounds:    parseInt(f.chanting_rounds) || 0,
     kanthi:            parseInt(f.kanthi) || 0,
-    vaishnavDress:     parseInt(f.vaishnav_dress) || 0,
-    gender:            (f.gender || '').trim() || null,
-    marriageAnniversary: f.marriage_anniversary || null,
-    department:        f.department || null,
-    teamName:          f.team_name || null,
+    gopiDress:         parseInt(f.gopi_dress) || 0,
+    // Department (teamName) is auto-derived from gender + marital status.
+    // Falls back to whatever was already set if those fields are blank.
+    teamName:          computeDepartment(f.gender, f.marital_status) || f.team_name || null,
     devoteeStatus:     f.devotee_status || 'Expected to be Serious',
     facilitator:       (f.facilitator || '').trim() || null,
     referenceBy:       (f.reference_by || '').trim() || null,
@@ -104,6 +105,11 @@ function toCamel(f) {
     isNotInterested:         f.is_not_interested || false,
     notInterestedAt:         f.not_interested_at || null,
     priorSessionsAttended:   parseInt(f.prior_sessions_attended) || 0,
+    // Department management fields
+    gender:            f.gender || null,
+    maritalStatus:     f.marital_status || null,
+    marriageAnniversary: f.marriage_anniversary || null,
+    team:              (f.team || '').trim() || null,
     ...(f.profile_pic !== undefined ? { profilePic: f.profile_pic } : {}),
   };
 }
@@ -117,10 +123,6 @@ const DB = {
     if (filters.search) {
       const s = filters.search.toLowerCase();
       list = list.filter(d => d.name.toLowerCase().includes(s) || (d.mobile || '').includes(s));
-    }
-    if (filters.dept) {
-      const deptTeams = getTeamsForDept(filters.dept);
-      list = list.filter(d => deptTeams.includes(d.teamName) || d.department === filters.dept);
     }
     if (filters.team)       list = list.filter(d => d.teamName === filters.team);
     if (filters.calling_by) list = list.filter(d => d.callingBy === filters.calling_by);
@@ -166,15 +168,17 @@ const DB = {
       );
       if (ex) throw { error: 'Duplicate', message: `"${ex.name}" with this mobile already exists`, existingId: ex.id };
     }
-    const payload = { ...toCamel(formData), lifetimeAttendance: 0, isActive: true, inactivityFlag: false, createdAt: TS(), updatedAt: TS() };
+    const payload = { ...toCamel(formData), lifetimeAttendance: 0, isActive: true, inactivityFlag: false, createdAt: TS(), updatedAt: TS(), createdBy: AppState.userName || '', createdById: AppState.userId || '' };
     const ref = await fdb.collection('devotees').add(payload);
+    await fdb.collection('profileChanges').add({ devoteeId: ref.id, fieldName: 'created', oldValue: '', newValue: 'Registered', changedAt: TS(), changedBy: AppState.userName || 'Admin', changedById: AppState.userId || '' });
     DevoteeCache.bust();
     return toSnake({ id: ref.id, ...payload });
   },
 
   async forceCreateDevotee(formData) {
-    const payload = { ...toCamel(formData), lifetimeAttendance: 0, isActive: true, inactivityFlag: false, createdAt: TS(), updatedAt: TS() };
+    const payload = { ...toCamel(formData), lifetimeAttendance: 0, isActive: true, inactivityFlag: false, createdAt: TS(), updatedAt: TS(), createdBy: AppState.userName || '', createdById: AppState.userId || '' };
     const ref = await fdb.collection('devotees').add(payload);
+    await fdb.collection('profileChanges').add({ devoteeId: ref.id, fieldName: 'created', oldValue: '', newValue: 'Registered', changedAt: TS(), changedBy: AppState.userName || 'Admin', changedById: AppState.userId || '' });
     DevoteeCache.bust();
     return toSnake({ id: ref.id, ...payload });
   },
@@ -184,7 +188,7 @@ const DB = {
     if (!doc.exists) throw new Error('Not found');
     const ex = doc.data();
     const updates = { ...toCamel(formData), updatedAt: TS() };
-    const trackMap = { name:'name', mobile:'mobile', chantingRounds:'chanting_rounds', kanthi:'kanthi', vaishnavDress:'vaishnav_dress', teamName:'team_name', devoteeStatus:'devotee_status', facilitator:'facilitator', referenceBy:'reference_by', callingBy:'calling_by', remarks:'remarks', gender:'gender', marriageAnniversary:'marriage_anniversary' };
+    const trackMap = { name:'name', mobile:'mobile', chantingRounds:'chanting_rounds', kanthi:'kanthi', gopiDress:'gopi_dress', teamName:'team_name', devoteeStatus:'devotee_status', facilitator:'facilitator', referenceBy:'reference_by', callingBy:'calling_by', remarks:'remarks', gender:'gender', maritalStatus:'marital_status', marriageAnniversary:'marriage_anniversary', team:'team' };
     const batch = fdb.batch();
     Object.entries(trackMap).forEach(([fKey, formKey]) => {
       const nv = updates[fKey], ov = ex[fKey];
@@ -241,12 +245,9 @@ const DB = {
             dateOfJoining:    importDate(importCol(row, ['Date of Joining','Date Of Joining','Joining Date','DOJ','Date of joining'])) || null,
             chantingRounds:   Math.abs(parseInt(importCol(row, ['Chanting Rounds','CHANTING','Chanting','CR','chanting','Rounds','rounds','chanting rounds'])) || 0),
             kanthi:           importYN(importCol(row, ['Kanthi','kanthi','KANTHI'])),
-            vaishnavDress:    importYN(importCol(row, ['Vaishnav Dress','Gopi Dress','Gopi','GOPI','gopi dress','vaishnav dress'])),
-            gender:           importCol(row, ['Gender','gender','Sex','sex']) || null,
-            marriageAnniversary: importDate(importCol(row, ['Marriage Anniversary','Anniversary','DOA','D.O.A'])) || null,
+            gopiDress:        importYN(importCol(row, ['Gopi Dress','Gopi','GOPI','gopi dress','Gopi dress'])),
             tilak:            importYN(importCol(row, ['Tilak','tilak','TILAK'])),
             teamName:         importCol(row, ['Team','Team Wise','Team Name','TEAM','Group','team','Team wise','Teamwise']) || null,
-            department:       (() => { const g = importCol(row, ['Gender','gender','Sex','sex']); const t = importCol(row, ['Team','Team Wise','Team Name','TEAM','Group','team']); return getDeptForGender(g) || getDeptForTeam(t) || null; })(),
             devoteeStatus:    importStatus(importCol(row, ['Status','Devotee Status','Dev Status','status','ETS','devotee status'])),
             facilitator:      importCol(row, ['Facilitator','facilitator','Faciltr']) || null,
             referenceBy:      importCol(row, ['Reference','Ref','Reference By','Referred By','Ref-2','ref','Ref 2','reference']) || null,
@@ -272,7 +273,7 @@ const DB = {
           } else if (exact) {
             skipped.push({ row: rowNum, name, mobile: mobile || '', reason: `Duplicate — same name + mobile already exists as "${exact.name}"` });
           } else {
-            batch.set(fdb.collection('devotees').doc(), { ...payload, lifetimeAttendance: 0, createdAt: TS() });
+            batch.set(fdb.collection('devotees').doc(), { ...payload, lifetimeAttendance: 0, createdAt: TS(), createdBy: AppState.userName || '', createdById: AppState.userId || '' });
             pairMap[dupKey] = { id: 'new', name };
             imported++; any = true;
           }
@@ -492,15 +493,6 @@ const DB = {
       const s = search.toLowerCase();
       list = list.filter(d => d.name.toLowerCase().includes(s) || (d.mobile || '').includes(s));
     }
-    // Apply master filter bar team/dept so attendance candidates respect scope.
-    const _attTeam = AppState.filters?.team || '';
-    const _attDept = AppState.filters?.dept || '';
-    if (_attTeam) {
-      list = list.filter(d => d.teamName === _attTeam);
-    } else if (_attDept) {
-      const _attDeptTeams = getTeamsForDept(_attDept);
-      list = list.filter(d => _attDeptTeams.includes(d.teamName) || d.department === _attDept);
-    }
     return list.map(d => ({
       ...toSnake(d),
       coming_status: csMap[d.id]?.comingStatus || null,
@@ -524,6 +516,7 @@ const DB = {
     DevoteeCache.bust();
     if (typeof _bustDashboardCache === 'function') _bustDashboardCache();
     if (typeof _bustCareCache === 'function') _bustCareCache();
+    if (typeof _bustCallStatusCache === 'function') _bustCallStatusCache();
   },
 
   async undoPresent(sessionId, devoteeId) {
@@ -534,6 +527,7 @@ const DB = {
     DevoteeCache.bust();
     if (typeof _bustDashboardCache === 'function') _bustDashboardCache();
     if (typeof _bustCareCache === 'function') _bustCareCache();
+    if (typeof _bustCallStatusCache === 'function') _bustCallStatusCache();
   },
 
   async getSessionAttendance(sessionId) {
@@ -562,7 +556,24 @@ const DB = {
     if (extra.topic       !== undefined) payload.topic       = extra.topic || '';
     if (extra.speakerName !== undefined) payload.speakerName = extra.speakerName || '';
     if (extra.sessionType !== undefined) payload.sessionType = extra.sessionType || 'regular';
-    if (extra.callingWindowOpen !== undefined) payload.callingWindowOpen = !!extra.callingWindowOpen;
+
+    // Calling-window state is two layers (see isCallingWindowOpen in config.js):
+    //   1. AUTOMATIC — the `callingDate` itself drives a 24h open window. No
+    //      action needed here; saving the date is enough to drive it.
+    //   2. MANUAL OVERRIDE — the admin's explicit toggle wins for 24h from the
+    //      moment they touch it, then expires back to automatic.
+    // We only ever WRITE the override fields when the admin actually toggled
+    // it this save (`extra.callingWindowOpen !== undefined`); we never infer
+    // or force an override from a date change — that would fight the
+    // calling-date driver instead of working with it.
+    if (extra.callingWindowOpen !== undefined) {
+      payload.callingWindowOverride   = !!extra.callingWindowOpen;
+      payload.callingWindowOverrideAt = TS();
+    }
+    // Drop any legacy fields from the old single-toggle model so stale data
+    // can't be misread by isCallingWindowOpen.
+    payload.callingWindowOpen     = firebase.firestore.FieldValue.delete();
+    payload.callingWindowOpenedAt = firebase.firestore.FieldValue.delete();
     await fdb.collection('settings').doc('callingWeek').set(payload, { merge: true });
     this._bustCfgCache();
     // Also propagate topic onto the Session doc so it shows on attendance screen
@@ -838,8 +849,8 @@ const DB = {
   },
 
   // Team Calling tab — all facilitators' calling lists for oversight.
-  // superAdmin: all teams (filtered via master filter bar in UI).
-  // deptCoordinator: own dept only.
+  // superAdmin: all departments (filtered via master filter bar in UI).
+  // deptCoordinator: own department only.
   async getTeamCallingStatus(weekDate) {
     const [raw, csSnap, cfgSnap, submSnap] = await Promise.all([
       DevoteeCache.all(),
@@ -863,21 +874,9 @@ const DB = {
       }
       return !!(d.callingBy && d.callingBy.trim());
     });
-    // Role-based scope: deptCoordinator → own dept; superAdmin → all
+    // deptCoordinator sees only their own department; superAdmin sees all
     if ((AppState.userRole === 'deptCoordinator' || AppState.userRole === 'teamAdmin') && AppState.userTeam) {
       filtered = filtered.filter(d => d.teamName === AppState.userTeam);
-    } else if (typeof isDeptAdmin === 'function' && isDeptAdmin() && AppState.userDept) {
-      const _dtTeams = getTeamsForDept(AppState.userDept);
-      filtered = filtered.filter(d => _dtTeams.includes(d.teamName) || d.department === AppState.userDept);
-    }
-    // Also honour master filter bar team/dept selection
-    const _tcTeam = AppState.filters?.team || '';
-    const _tcDept = AppState.filters?.dept || '';
-    if (_tcTeam) {
-      filtered = filtered.filter(d => d.teamName === _tcTeam);
-    } else if (_tcDept && AppState.userRole === 'superAdmin') {
-      const _tcDeptTeams = getTeamsForDept(_tcDept);
-      filtered = filtered.filter(d => _tcDeptTeams.includes(d.teamName) || d.department === _tcDept);
     }
     const devotees = filtered.map(d => ({
       ...toSnake(d),
@@ -925,9 +924,16 @@ const DB = {
 
   async updateCallingStatus(devoteeId, weekDate, data) {
     const now = new Date();
-    const snap = await fdb.collection('callingStatus').where('devoteeId', '==', devoteeId).where('weekDate', '==', weekDate).limit(1).get();
+    const [snap, allDevotees] = await Promise.all([
+      fdb.collection('callingStatus').where('devoteeId', '==', devoteeId).where('weekDate', '==', weekDate).limit(1).get(),
+      DevoteeCache.all()
+    ]);
+    // Stamp the devotee's team onto the write so Firestore rules can scope
+    // calling edits to "your own team, or super admin / delegated cross-team".
+    const devotee = allDevotees.find(d => d.id === devoteeId);
     const payload = {
       devoteeId, weekDate,
+      teamName:        devotee?.teamName || null,
       comingStatus:    data.coming_status || '',
       updatedAt:       TS(),
       updatedAtClient: now.toISOString(),
@@ -943,7 +949,10 @@ const DB = {
     if (snap.empty) {
       payload.createdAt = TS();
       payload.createdAtClient = now.toISOString();
-      await fdb.collection('callingStatus').add(payload);
+      // Deterministic doc ID (devoteeId_weekDate) instead of .add() — if two
+      // saves race for the same devotee/week, both writes land on the same
+      // doc instead of creating duplicate callingStatus records.
+      await fdb.collection('callingStatus').doc(`${devoteeId}_${weekDate}`).set(payload);
     } else {
       const prev = snap.docs[0].data();
       await snap.docs[0].ref.update(payload);
@@ -969,6 +978,9 @@ const DB = {
     // Bust those caches so next view shows fresh numbers.
     if (typeof _bustDashboardCache === 'function') _bustDashboardCache();
     if (typeof _bustCareCache === 'function') _bustCareCache();
+    if (typeof _bustCallStatusCache === 'function') _bustCallStatusCache();
+    if (typeof _bustCallingHistoryCache === 'function') _bustCallingHistoryCache();
+    if (typeof _tcBustCache === 'function') _tcBustCache();
   },
 
 
@@ -1046,17 +1058,19 @@ const DB = {
   },
 
   async getCallingStatusChanges(devoteeId) {
-    // Last 8 weeks of change history, newest first
+    // Last 8 weeks of change history, newest first.
+    // Single equality filter only (no composite index needed); the 8-week
+    // cutoff and sort are applied client-side.
     const cutoff = (() => {
       const d = new Date(); d.setDate(d.getDate() - 56);
       return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     })();
     const snap = await fdb.collection('callingStatusChanges')
       .where('devoteeId', '==', devoteeId)
-      .where('weekDate', '>=', cutoff)
       .get();
     return snap.docs
       .map(d => ({ id: d.id, ...d.data(), changedAtISO: tsToISO(d.data().changedAt) }))
+      .filter(r => (r.weekDate || '') >= cutoff)
       .sort((a, b) => (b.changedAtISO || b.changedAtClient || '').localeCompare(a.changedAtISO || a.changedAtClient || ''));
   },
 
@@ -1102,6 +1116,9 @@ const DB = {
   async saveCallingRemarks(statusId, remarks) {
     await fdb.collection('callingStatus').doc(statusId).update({ lateRemarks: remarks, updatedAt: TS() });
     if (typeof _bustDashboardCache === 'function') _bustDashboardCache();
+    if (typeof _bustCallStatusCache === 'function') _bustCallStatusCache();
+    if (typeof _bustCallingHistoryCache === 'function') _bustCallingHistoryCache();
+    if (typeof _tcBustCache === 'function') _tcBustCache();
   },
 
   async submitCallingWeek(weekDate, userId, userName, teamName) {
@@ -1121,6 +1138,9 @@ const DB = {
         initialSubmittedAt: TS(), initialSubmittedAtClient: now,
       });
     }
+    if (typeof _bustCallStatusCache === 'function') _bustCallStatusCache();
+    if (typeof _bustCallingHistoryCache === 'function') _bustCallingHistoryCache();
+    if (typeof _tcBustCache === 'function') _tcBustCache();
   },
 
   async getCallingSubmissions(weekDates) {
@@ -1195,7 +1215,7 @@ const DB = {
       return aliasNameMap[name] || name;
     };
 
-    // Dept coordinators: teamName/dept → current coordinatorName
+    // Dept coordinators: teamName → current coordinatorName
     const teamAdminMap = {};
     usersSnap.docs.forEach(d => {
       const u = d.data();
@@ -1353,7 +1373,10 @@ const DB = {
     ]);
     const devMap = {};
     all.forEach(d => { devMap[d.id] = d; });
-    const yesIds = csSnap.docs.map(d => d.data().devoteeId);
+    // De-dupe devoteeIds — duplicate callingStatus docs for the same devotee/week
+    // (a known race condition in updateCallingStatus) would otherwise produce the
+    // same devotee repeated multiple times in the list.
+    const yesIds = [...new Set(csSnap.docs.map(d => d.data().devoteeId))];
     if (sessSnap.empty || sessSnap.docs[0].data().isCancelled) return { hasSession:false, list:[] };
     const attSnap = await fdb.collection('attendanceRecords').where('sessionId','==',sessSnap.docs[0].id).get();
     const attSet = new Set(attSnap.docs.map(d => d.data().devoteeId));
@@ -1361,7 +1384,18 @@ const DB = {
       const d = devMap[id] || {};
       return { id, name:d.name||'—', teamName:d.teamName||'', callingBy:d.callingBy||'', mobile:d.mobile||'' };
     }).sort((a,b) => (a.teamName||'').localeCompare(b.teamName||'') || a.name.localeCompare(b.name));
-    return { hasSession:true, list };
+    // De-dupe by mobile (or name+team if no mobile) — handles duplicate devotee
+    // profiles (same person entered more than once with the same number),
+    // which the devoteeId-based de-dupe above can't catch since each duplicate
+    // profile has its own id and its own callingStatus doc.
+    const seen = new Set();
+    const dedupedList = list.filter(item => {
+      const key = item.mobile ? `m_${item.mobile}` : `n_${item.name.toLowerCase()}_${item.teamName}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return { hasSession:true, list: dedupedList };
   },
 
   /* REPORTS */
@@ -1492,11 +1526,14 @@ const DB = {
     const sessions = sSnap.docs.map(d => ({ id: d.id }));
     if (sessions.length < 2) return { absentThisWeek: [], absentPast2Weeks: [] };
     const [latest, ...prev] = sessions;
-    const raw = await DevoteeCache.all();
     const allIds = sessions.map(s => s.id);
-    const attSnaps = await Promise.all(allIds.map(sid => fdb.collection('attendanceRecords').where('sessionId', '==', sid).get()));
+    // Single 'in' query instead of one query per session — reduces 5 round trips to 1.
+    const [raw, attSnap] = await Promise.all([
+      DevoteeCache.all(),
+      fdb.collection('attendanceRecords').where('sessionId', 'in', allIds).get(),
+    ]);
     const attMap = {};
-    attSnaps.forEach((snap, i) => snap.docs.forEach(d => { const did = d.data().devoteeId; if (!attMap[did]) attMap[did] = new Set(); attMap[did].add(allIds[i]); }));
+    attSnap.docs.forEach(d => { const did = d.data().devoteeId; const sid = d.data().sessionId; if (!attMap[did]) attMap[did] = new Set(); attMap[did].add(sid); });
     const absentThisWeek = [], absentPast2Weeks = [];
     raw.forEach(d => {
       const att = attMap[d.id] || new Set();
@@ -1557,6 +1594,17 @@ const DB = {
       mds.add(`${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
     }
     return raw.filter(d => d.dob && mds.has(d.dob.slice(5))).map(toSnake);
+  },
+
+  async getCareAnniversaries() {
+    const raw = await DevoteeCache.all();
+    const today = new Date();
+    const mds = new Set();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(today); d.setDate(today.getDate() + i);
+      mds.add(`${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+    }
+    return raw.filter(d => d.marriageAnniversary && mds.has(d.marriageAnniversary.slice(5))).map(toSnake);
   },
 
   async getCareInactive() {
@@ -1822,5 +1870,27 @@ const DB = {
     const snap = await q.get();
     return snap.docs.map(d => ({ id: d.id, ...d.data() }))
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  },
+
+  /* SUPPORT REQUESTS */
+  async submitSupportRequest(data) {
+    return fdb.collection('supportRequests').add({
+      userId:    AppState.userId   || '',
+      userName:  AppState.userName || '',
+      userTeam:  AppState.userTeam || '',
+      userRole:  AppState.userRole || '',
+      message:   data.message   || '',
+      imageData: data.imageData || null,
+      voiceData: data.voiceData || null,
+      status:    'open',
+      createdAt: TS(),
+    });
+  },
+  async getSupportRequests() {
+    const snap = await fdb.collection('supportRequests').orderBy('createdAt', 'desc').limit(200).get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+  async markSupportResolved(id) {
+    await fdb.collection('supportRequests').doc(id).update({ status: 'resolved', resolvedAt: TS() });
   },
 };

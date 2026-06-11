@@ -253,7 +253,7 @@ async function _buildPrompt(question) {
     } catch (e) { console.warn('AI: activities fetch failed', e); }
   }
 
-  return `You are an AI assistant for "Advance Devotees", an ISKCON department-based management app used by department coordinators.
+  return `You are an AI assistant for "Advance Devotees", an ISKCON community management app used by department coordinators.
 Today: ${today}
 
 ${sections.join('\n\n')}

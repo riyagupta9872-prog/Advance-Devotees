@@ -46,6 +46,16 @@ function removeDevoteePhoto() {
 }
 window.removeDevoteePhoto = removeDevoteePhoto;
 
+// Global map: devoteeId → { src, name }  — populated by _devAvatarHtml and My Log
+// so we never embed large base64 strings in onclick= attributes.
+const _photoZoomMap = {};
+function openDevoteePhotoZoom(id) {
+  if (!isAdminOrCoord()) return;
+  const e = _photoZoomMap[id];
+  if (e?.src) openPhotoLightbox(e.src, e.name);
+}
+window.openDevoteePhotoZoom = openDevoteePhotoZoom;
+
 function openPhotoLightbox(src, name) {
   if (!src) return;
   const lb  = document.getElementById('photo-lightbox');
@@ -115,7 +125,7 @@ function _sundaysSince(fromDateStr) {
 // Boolean attire fields (tilak/kanthi/gopi) have a meaningful 0 default, so excluded.
 function _calcProfileCompletion(d) {
   const checks = [
-    d.name, d.mobile, d.dob, d.gender, d.address, d.email,
+    d.name, d.mobile, d.dob, d.address, d.email,
     d.education, d.profession, d.reading, d.hearing, d.hobbies,
     d.reference_by, d.facilitator, d.calling_by,
     d.family_favourable,
@@ -154,7 +164,6 @@ async function loadDevotees() {
   // dispatchFilters() so AppState.filters.team is already correct here.
   const filters = {
     search:     document.getElementById('devotee-search').value.trim(),
-    dept:       getFilterDept(),
     team:       getFilterTeam(),
     calling_by: getFilterCallingBy(),
     status:     document.getElementById('filter-status').value,
@@ -174,9 +183,14 @@ async function loadDevotees() {
 }
 
 function _devAvatarHtml(d) {
-  return d.profile_pic
-    ? `<div class="devotee-avatar" style="overflow:hidden;padding:0"><img src="${d.profile_pic}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></div>`
-    : `<div class="devotee-avatar">${initials(d.name)}</div>`;
+  if (d.profile_pic) {
+    const canZoom = isAdminOrCoord();
+    if (canZoom) _photoZoomMap[d.id] = { src: d.profile_pic, name: d.name };
+    return `<div class="devotee-avatar" style="overflow:hidden;padding:0${canZoom ? ';cursor:zoom-in' : ''}"
+      ${canZoom ? `onclick="openDevoteePhotoZoom('${d.id}');event.stopPropagation()" title="Tap to view full photo"` : ''}>
+      <img src="${d.profile_pic}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;pointer-events:none"></div>`;
+  }
+  return `<div class="devotee-avatar">${initials(d.name)}</div>`;
 }
 
 function renderDevoteeItem(d) {
@@ -276,8 +290,8 @@ async function openProfileModal(id) {
           <div class="profile-field full"><label>Residential Address</label><span>${d.address || '—'}</span></div>
           <div class="profile-field"><label>Date of Birth</label><span>${formatDate(d.dob)}${isBirthdayWeek(d.dob) ? ' 🎂' : ''}</span></div>
           <div class="profile-field"><label>Gender</label><span>${d.gender || '—'}</span></div>
-          <div class="profile-field"><label>Marriage Anniversary</label><span>${d.marriage_anniversary ? formatDate(d.marriage_anniversary) : '—'}</span></div>
-          <div class="profile-field"><label>Department</label><span>${d.department || (d.gender ? getDeptForGender(d.gender) : '') || '—'}</span></div>
+          <div class="profile-field"><label>Marital Status</label><span>${d.marital_status || '—'}</span></div>
+          ${d.marital_status === 'Married' ? `<div class="profile-field"><label>Marriage Anniversary</label><span>${formatDate(d.marriage_anniversary)}${isAnniversaryWeek(d.marriage_anniversary) ? ' 💍' : ''}</span></div>` : ''}
           <div class="profile-field"><label>Mobile (Primary)</label><span>${d.mobile || '—'}</span></div>
           <div class="profile-field"><label>Alternate Mobile</label><span>${d.mobile_alt || '—'}</span></div>
           <div class="profile-field"><label>Email</label><span>${d.email ? `<a href="mailto:${d.email}" style="color:var(--primary)">${d.email}</a>` : '—'}</span></div>
@@ -292,7 +306,8 @@ async function openProfileModal(id) {
           <span class="psec-note">Team assignment and connections</span>
         </div>
         <div class="profile-fields">
-          <div class="profile-field"><label>Team Name</label><span>${d.team_name ? teamBadge(d.team_name) : '—'}</span></div>
+          <div class="profile-field"><label>Team</label><span>${d.team || '—'}</span></div>
+          <div class="profile-field"><label>Department</label><span>${d.team_name ? teamBadge(d.team_name) : '—'}</span></div>
           <div class="profile-field"><label>Devotee Status</label><span>${statusBadge(d.devotee_status)}</span></div>
           <div class="profile-field"><label>Date of Joining</label><span>${formatDate(d.date_of_joining)}</span></div>
           <div class="profile-field"><label>Reference By</label><span id="pv-ref-by">${d.reference_by || '—'}</span></div>
@@ -330,7 +345,7 @@ async function openProfileModal(id) {
           <div class="profile-field"><label>Hearing</label><span>${d.hearing ? `<span class="pf-tag">${d.hearing}</span>` : '—'}</span></div>
           <div class="profile-field"><label>Tilak</label>${yn(d.tilak)}</div>
           <div class="profile-field"><label>Kanthi</label>${yn(d.kanthi)}</div>
-          <div class="profile-field"><label>Vaishnav Dress</label>${yn(d.vaishnav_dress)}</div>
+          <div class="profile-field"><label>Gopi Dress</label>${yn(d.gopi_dress)}</div>
           <div class="profile-field"><label>Plays Instrument</label><span>${
             d.plays_instrument === 'Yes'
               ? `<span class="pf-tag pf-kirtan"><i class="fas fa-music"></i> Yes${d.instrument_name ? ` — ${d.instrument_name}` : ''}</span>`
@@ -462,6 +477,13 @@ function openDevoteeFormModal(fromAttendance = false, editId = null) {
   document.getElementById('f-id').value = editId || '';
   document.getElementById('devotee-form-title').textContent = editId ? 'Edit Devotee Profile' : (fromAttendance ? 'Register New Devotee' : 'Add New Devotee');
   if (editId) populateEditForm(editId); else clearDevoteeForm();
+  // When opened from attendance: lock Team (blank) and status=New Devotee so
+  // walk-in registrations are always routed to New Comers for follow-up.
+  const lockForAtt = fromAttendance && !editId;
+  const fTeam   = document.getElementById('f-team');
+  const fStatus = document.getElementById('f-status');
+  if (fTeam)   { fTeam.disabled   = lockForAtt; fTeam.title   = lockForAtt ? 'Fixed during attendance — reassign from Calling Mgt → New Comers' : ''; }
+  if (fStatus) { fStatus.disabled = lockForAtt; fStatus.title = lockForAtt ? 'Fixed during attendance — reassign from Calling Mgt → New Comers' : ''; }
   switchProfileTab('identity', null);
   openModal('devotee-form-modal');
 }
@@ -473,13 +495,15 @@ function clearDevoteeForm() {
   if (photoInput) photoInput.value = '';
   ['f-name','f-mobile','f-mobile-alt','f-address','f-education','f-email','f-profession','f-hobbies','f-family-members','f-family-participants'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   document.getElementById('f-dob').value = '';
-  const fGender = document.getElementById('f-gender'); if (fGender) fGender.value = '';
-  const fAnniversary = document.getElementById('f-anniversary'); if (fAnniversary) fAnniversary.value = '';
   document.getElementById('f-joining').value = getToday();
   document.getElementById('f-chanting').value = '0';
-  // New devotees default to team "Other" and status "New Devotee" — super admin
-  // can re-assign later from the Calling Mgmt → New Comers tab.
-  document.getElementById('f-team').value = 'Other';
+  document.getElementById('f-team').value = '';
+  const fGenderClear = document.getElementById('f-gender'); if (fGenderClear) fGenderClear.value = '';
+  const fMaritalClear = document.getElementById('f-marital-status'); if (fMaritalClear) fMaritalClear.value = '';
+  const fAnnivClear = document.getElementById('f-marriage-anniversary'); if (fAnnivClear) fAnnivClear.value = '';
+  _updateComputedDept();
+  // New devotees default to status "New Devotee" — super admin can re-assign
+  // later from the Calling Mgmt → New Comers tab.
   document.getElementById('f-status').value = 'New Devotee';
   document.getElementById('f-kanthi').value = '0';
   document.getElementById('f-gopi').value = '0';
@@ -497,11 +521,17 @@ function clearDevoteeForm() {
   clearPicker('picker-calling-by',  'f-calling-by');
   const fRem = document.getElementById('f-remarks'); if (fRem) fRem.value = '';
   clearFieldError('mobile');
-  // Coordinators / facilitators who can only see their own team get that team
-  // pre-filled instead of "Other".
-  if ((AppState.userRole === 'deptCoordinator' || AppState.userRole === 'teamAdmin' || AppState.userRole === 'serviceDevotee') && AppState.userTeam) {
-    document.getElementById('f-team').value = AppState.userTeam;
-  }
+}
+
+// Reads #f-gender + #f-marital-status and writes the auto-assigned
+// department into the read-only #f-department field.
+function _updateComputedDept() {
+  const fDept = document.getElementById('f-department');
+  if (!fDept) return;
+  const gender = document.getElementById('f-gender')?.value || '';
+  const marital = document.getElementById('f-marital-status')?.value || '';
+  fDept.value = computeDepartment(gender, marital) || '';
+  fDept.placeholder = fDept.value ? '' : 'Set Gender + Marital Status';
 }
 
 async function populateEditForm(id) {
@@ -514,14 +544,16 @@ async function populateEditForm(id) {
     const fMobileAlt = document.getElementById('f-mobile-alt'); if (fMobileAlt) fMobileAlt.value = d.mobile_alt || '';
     document.getElementById('f-address').value  = d.address || '';
     document.getElementById('f-dob').value      = d.dob || '';
-    const fGender = document.getElementById('f-gender'); if (fGender) { fGender.value = d.gender || ''; }
-    const fAnniversary = document.getElementById('f-anniversary'); if (fAnniversary) fAnniversary.value = d.marriage_anniversary || '';
     document.getElementById('f-joining').value  = d.date_of_joining || '';
     document.getElementById('f-chanting').value = d.chanting_rounds || 0;
-    document.getElementById('f-team').value     = d.team_name || '';
+    document.getElementById('f-team').value     = d.team || '';
+    const fGender = document.getElementById('f-gender'); if (fGender) fGender.value = d.gender || '';
+    const fMarital = document.getElementById('f-marital-status'); if (fMarital) fMarital.value = d.marital_status || '';
+    const fAnniv = document.getElementById('f-marriage-anniversary'); if (fAnniv) fAnniv.value = d.marriage_anniversary || '';
+    _updateComputedDept();
     document.getElementById('f-status').value   = d.devotee_status || 'Expected to be Serious';
     document.getElementById('f-kanthi').value   = d.kanthi || 0;
-    document.getElementById('f-gopi').value     = d.vaishnav_dress || 0;
+    document.getElementById('f-gopi').value     = d.gopi_dress || 0;
     if (d.facilitator) { document.getElementById('f-facilitator').value = d.facilitator; const pi = document.querySelector('#picker-facilitator .picker-input'); if(pi){pi.value=d.facilitator;pi.classList.add('has-value');} }
     if (d.reference_by) {
       document.getElementById('f-reference').value = d.reference_by;
@@ -559,44 +591,23 @@ async function populateEditForm(id) {
   } catch (_) { showToast('Failed to load profile', 'error'); }
 }
 
-function _onGenderChange(val) {
-  // Auto-suggest team from gender-based department — update team dropdown's first selection
-  // but don't override an already-set team.
-  const teamEl = document.getElementById('f-team');
-  if (teamEl && !teamEl.value) {
-    const dept = getDeptForGender(val);
-    if (dept && DEPARTMENTS[dept]?.length) {
-      // pre-select first team of dept as a hint only if blank
-      // leave blank to avoid forcing assignment
-    }
-  }
-}
-window._onGenderChange = _onGenderChange;
-
-function _onTeamChange(val) {
-  // When team is selected, optionally auto-set gender field hint based on dept
-  // (just a UX hint — user can override gender freely)
-}
-window._onTeamChange = _onTeamChange;
-
 function getFormPayload() {
-  const gender = document.getElementById('f-gender')?.value || '';
-  const teamName = document.getElementById('f-team').value;
   return {
     name:              document.getElementById('f-name').value.trim(),
     mobile:            document.getElementById('f-mobile').value.replace(/\D/g,'').slice(0,10),
     mobile_alt:        (document.getElementById('f-mobile-alt')?.value || '').replace(/\D/g,'').slice(0,10),
     address:           document.getElementById('f-address').value.trim(),
     dob:               document.getElementById('f-dob').value,
-    gender:            gender,
-    marriage_anniversary: document.getElementById('f-anniversary')?.value || '',
-    department:        getDeptForGender(gender) || getDeptForTeam(teamName) || '',
     date_of_joining:   document.getElementById('f-joining').value,
     chanting_rounds:   parseInt(document.getElementById('f-chanting').value) || 0,
-    team_name:         teamName,
+    team:              document.getElementById('f-team').value.trim(),
+    gender:            document.getElementById('f-gender')?.value || '',
+    marital_status:    document.getElementById('f-marital-status')?.value || '',
+    marriage_anniversary: document.getElementById('f-marriage-anniversary')?.value || '',
+    team_name:         document.getElementById('f-department')?.value || '',
     devotee_status:    document.getElementById('f-status').value,
     kanthi:            parseInt(document.getElementById('f-kanthi').value),
-    vaishnav_dress:    parseInt(document.getElementById('f-gopi').value),
+    gopi_dress:        parseInt(document.getElementById('f-gopi').value),
     facilitator:       document.getElementById('f-facilitator').value.trim(),
     reference_by:      document.getElementById('f-reference').value.trim() || document.querySelector('#picker-reference .picker-input')?.value.trim() || '',
     calling_by:        document.getElementById('f-calling-by').value.trim(),
@@ -746,7 +757,7 @@ async function openHistoryModal() {
   try {
     const history = await DB.getProfileHistory(AppState.currentDevoteeId);
     if (!history.length) { content.innerHTML = '<div class="empty-state" style="padding:2rem"><i class="fas fa-history"></i><p>No changes recorded yet</p></div>'; return; }
-    const labels = { name:'Name', mobile:'Mobile', chanting_rounds:'Chanting Rounds', kanthi:'Kanthi', vaishnav_dress:'Vaishnav Dress', team_name:'Team', devotee_status:'Status', facilitator:'Facilitator', reference_by:'Reference', calling_by:'Calling By', gender:'Gender', marriage_anniversary:'Marriage Anniversary' };
+    const labels = { name:'Name', mobile:'Mobile', chanting_rounds:'Chanting Rounds', kanthi:'Kanthi', gopi_dress:'Gopi Dress', team_name:'Department', team:'Team', gender:'Gender', marital_status:'Marital Status', marriage_anniversary:'Marriage Anniversary', devotee_status:'Status', facilitator:'Facilitator', reference_by:'Reference', calling_by:'Calling By', created:'Registered', is_not_interested:'Not Interested', calling_mode:'Calling Mode' };
     content.innerHTML = history.map(h => `
       <div class="history-item">
         <div class="history-field">${labels[h.field_name] || h.field_name}</div>

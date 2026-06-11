@@ -47,7 +47,7 @@ All logic lives in [js/](js/), loaded as `<script>` tags in [index.html](index.h
 | [js/ui-calling.js](js/ui-calling.js) | Weekly calling list, calling reports, late-submission tracker |
 | [js/ui-attendance.js](js/ui-attendance.js) | Attendance sheet, Sunday config, live marking |
 | [js/ui-analytics.js](js/ui-analytics.js) | Reports + Care + Events tabs |
-| [js/ui-activities.js](js/ui-activities.js) | Books / Service / Registration / Donation — driven by `ACTIVITY_CONFIG` |
+| [js/ui-activities.js](js/ui-activities.js) | **Empty stub** — activity tabs were removed; file kept only for SW cache compatibility |
 | [js/ui-home.js](js/ui-home.js) | Home tab + quick-entry drawers; reuses `_initDevoteePicker(prefix)` for `bd`/`reg`/`srv` |
 | [js/ui-ai-chat.js](js/ui-ai-chat.js) | AI chat FAB; proxied via Cloudflare Worker `_AI_PROXY_BASE` to hide the Gemini key |
 
@@ -94,25 +94,19 @@ The Calling tab's **Submit window** is gated by `settings/callingWeek.callingDat
 |---|---|
 | `superAdmin` | All tabs, all teams |
 | `teamAdmin` | All tabs, scoped to `AppState.userTeam` |
-| `serviceDevotee` | Same tab access as `teamAdmin` when a Facilitator; Attendance-only otherwise |
+| `serviceDevotee` | Attendance tab only (mark own attendance) |
 
 **Special flag** — `AppState.isAttSevaDev` is set when a service devotee logs in via "Login as Attendance Service Devotee". Grants cross-team attendance marking for one session without promoting the role. Check this flag (not just `userRole`) wherever Attendance is team-scoped.
 
-**Delegation flags** — Super admins can grant per-user "lite" powers without a full role promotion. These are stored on the `users/{uid}` doc and loaded into `AppState` at login:
-
-| Flag | What it unlocks |
+**Delegation flags** — superAdmin can grant extra powers per-user without making them a full superAdmin. All live on `AppState` and on the `users/{uid}` doc:
+| Flag | Effect |
 |---|---|
 | `canAllTeamCalling` | Submit/edit calling on behalf of any team |
 | `canAllTeamReports` | View reports across all teams (read-only) |
-| `canManageAllTeams` | Both above + full write access app-wide (lite super admin) |
-| `canBackDateAttendance` | Mark attendance on past sessions |
+| `canManageAllTeams` | Both above + full write access app-wide ("lite super admin") |
+| `canBackDateAttendance` | Mark/undo attendance on past sessions |
 
-**Permission helpers** (defined in [js/config.js](js/config.js)) — **always use these instead of raw `AppState.userRole` equality**, because they fold in the delegation flags automatically:
-- `isSuperAdmin()` — role is `superAdmin`
-- `canCrossTeamCalling()` — super admin OR `canAllTeamCalling` OR `canManageAllTeams`
-- `canCrossTeamReports()` — super admin OR `canAllTeamReports` OR `canManageAllTeams`
-- `canCrossTeamManage()` — super admin OR `canManageAllTeams`
-- `canChangeTeamFilter()` — whether the master Team chip is editable for this user
+Use the helper functions `canCrossTeamCalling()`, `canCrossTeamReports()`, `canCrossTeamManage()` from `config.js` instead of checking flags directly — they fold in `isSuperAdmin()`.
 
 **First-user bootstrap** — if the `users` collection is empty at signup, the new user gets `superAdmin`. Otherwise signups default to `serviceDevotee` until upgraded.
 
@@ -133,12 +127,7 @@ The Calling tab's **Submit window** is gated by `settings/callingWeek.callingDat
 | `callingStatus` | Weekly calling outcome (keyed by Saturday `weekDate`) |
 | `callingSubmissions` | Submission timestamps per coordinator per week |
 | `events` / `eventDevotees` | Special events |
-| `callingStatusChanges` | Audit trail for calling status edits (keyed by Saturday `weekDate`) |
-| `profileChanges` | Audit trail for devotee profile edits |
-| `settings/callingWeek` | Single doc: configured session date + calling date for the current week |
-| `settings/attendanceTargets` | Single doc: per-team or global attendance targets |
-| `settings/migrations` | Single doc: one-time migration flags (e.g. `visakhaToVishakha`) |
-| `signupRequests` | Pending signup approvals |
+| `profileChanges` | Audit trail |
 
 Sessions are created lazily — there's no pre-population step. Cancelled sessions carry `is_cancelled: true`; attendance is still allowed on them. `loadSessionByDate(dateStr)` snaps to the nearest Sunday first.
 
@@ -160,10 +149,6 @@ Anchored on master Session, computes four lists:
 - **Inactive** — `inactivityFlag: true` after repeated absence
 - **Returning Newcomers** — newly created devotees attending after an initial gap
 
-### Adding a New Activity Type
-
-Add one entry to `ACTIVITY_CONFIG` in [js/ui-activities.js](js/ui-activities.js): `prefix`, `addFn`, `getFn`, field list, display labels. The Log Entry and Reports sub-tabs auto-generate. No other plumbing.
-
 ### AI Chat (ui-ai-chat.js)
 
 Natural-language queries over Firestore data. Calls the Gemini API via a Cloudflare Worker (`_AI_PROXY_BASE`) so the key stays server-side. Tries models in order from `_GEMINI_MODELS` (gemini-2.5-flash → flash-lite → 2.0-flash-lite → …) — if quota is hit on one, it falls back to the next automatically.
@@ -173,7 +158,7 @@ Natural-language queries over Firestore data. Calls the Gemini API via a Cloudfl
 - `DevoteeCache` — 90 s TTL in-memory cache. **Call `DevoteeCache.bust()` after any devotee create/update/delete.**
 - `sessionsCache` on `AppState` — session metadata by ID
 - **Service worker** ([sw.js](sw.js)): Firebase URLs bypass cache; `/js/*.js` is network-first; static assets are cache-first. **Bump `sakhi-sang-vXX` on every deploy** to invalidate caches.
-- Firestore offline persistence is on with `synchronizeTabs: true`. The `try/catch` around it in `config.js` exists because multi-tab init can throw an assertion — it reloads the page in that case. **Don't remove that try/catch.**
+- Firestore offline persistence is on with `synchronizeTabs: true`. Global `unhandledrejection` and `error` handlers in `config.js` catch Firestore `INTERNAL ASSERTION FAILED` errors (a known SDK bug with multi-tab persistence) and reload the page automatically. **Don't remove those handlers.**
 
 ### UI Utilities (globals from ui-core.js)
 
@@ -203,21 +188,6 @@ Use `:root` custom properties — don't hardcode values:
 - Layout: `--header-h: 64px`, `--nav-h: 52px`
 - Radius: `--radius-xs` → `--radius-lg`; Shadows: `--shadow-xs` → `--shadow-lg`
 - Type: Cinzel (headings), Nunito (body)
-
-## Planned React Migration
-
-[REACT_MIGRATION_PRD.md](REACT_MIGRATION_PRD.md) documents a planned complete rewrite of this app in React + TypeScript + Vite. **The current vanilla JS app is the production app; the PRD is planning-stage only.**
-
-Key migration decisions (relevant even when working on the vanilla app):
-- React Query replaces all `_xxxInFlight` single-flight guards and `_xxxGen` race counters — those patterns are explicitly called out as technical debt
-- Zustand replaces `AppState` + `dispatchFilters` + `filtersChanged` event
-- **Don't introduce new gen-counter / single-flight patterns** in the vanilla app; they will be deleted in the rewrite
-- The PRD's Business Rules section (§8) is the most complete reference for non-obvious rules like the Saturday/Sunday key split and `callingMode` semantics
-
-## Reference Docs
-
-- [ROLES_AND_DATAFLOW.html](ROLES_AND_DATAFLOW.html) — visual diagram of role hierarchy and data flow (open in browser)
-- [USER_GUIDE.md](USER_GUIDE.md) — end-user documentation for coordinators
 
 ## Firebase Setup (new project)
 
