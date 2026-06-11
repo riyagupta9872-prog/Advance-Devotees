@@ -135,6 +135,7 @@ auth.onAuthStateChanged(async (user) => {
     AppState.userTeam      = ud.teamName   || null;
     AppState.userPosition  = ud.position   || null;
     AppState.userName      = ud.name       || user.email;
+    AppState.userGender    = ud.gender     || null;
     AppState.profilePic    = ud.profilePic || null;
     AppState.isAttSevaDev  = !!ud.isAttSevaDev;
     // ── DELEGATION FLAGS ── per-user powers granted by super admin without
@@ -522,6 +523,7 @@ function openEditProfile() {
   _pendingProfilePic = undefined;
   document.getElementById('edit-profile-name').value     = AppState.userName || '';
   document.getElementById('edit-profile-position').value = AppState.userPosition || '';
+  document.getElementById('edit-profile-gender').value   = AppState.userGender || '';
   document.getElementById('edit-profile-error').style.display = 'none';
   document.getElementById('profile-pic-input').value = '';
   _renderProfilePicPreview(AppState.profilePic || null);
@@ -596,7 +598,8 @@ async function saveEditProfile() {
   const oldName = AppState.userName;
   const nameChanged = name !== oldName;
 
-  const updates = { name, position, updatedAt: TS() };
+  const gender = document.getElementById('edit-profile-gender').value || null;
+  const updates = { name, position, gender, updatedAt: TS() };
   if (AppState.userRole === 'superAdmin') {
     updates.teamName = document.getElementById('edit-profile-team').value || null;
   }
@@ -610,6 +613,7 @@ async function saveEditProfile() {
     }
     AppState.userName     = name;
     AppState.userPosition = position;
+    AppState.userGender   = gender;
     if (AppState.userRole === 'superAdmin') AppState.userTeam = updates.teamName;
     if (_pendingProfilePic !== undefined) AppState.profilePic = _pendingProfilePic || null;
     document.getElementById('header-user-name').textContent = name;
@@ -1073,6 +1077,7 @@ function openUserAction(uid) {
   document.getElementById('ua-user-id').value              = uid;
   document.getElementById('ua-position').value             = u.position || '';
   document.getElementById('ua-mobile').value               = u.mobile   || '';
+  document.getElementById('ua-gender').value               = u.gender   || '';
   document.getElementById('ua-team').value                 = u.teamName || '';
   document.getElementById('ua-role').value                 = (u.role === 'teamAdmin' ? 'deptCoordinator' : u.role) || 'serviceDevotee';
   document.getElementById('ua-att-seva').checked           = !!u.isAttSevaDev;
@@ -1161,6 +1166,7 @@ async function doSaveUserAction() {
   const uid               = document.getElementById('ua-user-id').value;
   const position          = document.getElementById('ua-position').value.trim() || null;
   const mobile            = document.getElementById('ua-mobile').value.trim() || null;
+  const gender            = document.getElementById('ua-gender').value || null;
   const teamName          = document.getElementById('ua-team').value || null;
   const role              = document.getElementById('ua-role').value;
   const isAttSevaDev          = document.getElementById('ua-att-seva').checked;
@@ -1171,14 +1177,14 @@ async function doSaveUserAction() {
   if (!uid) return;
   try {
     await fdb.collection('users').doc(uid).update({
-      position, mobile, teamName, role,
+      position, mobile, gender, teamName, role,
       isAttSevaDev, canBackDateAttendance, canAllTeamCalling, canAllTeamReports, canManageAllTeams,
       updatedAt: TS(),
     });
     // reflect in local cache
     const u = _umUsers.find(x => x.uid === uid);
     if (u) {
-      u.position = position; u.mobile = mobile; u.teamName = teamName; u.role = role;
+      u.position = position; u.mobile = mobile; u.gender = gender; u.teamName = teamName; u.role = role;
       u.isAttSevaDev = isAttSevaDev;
       u.canBackDateAttendance = canBackDateAttendance;
       u.canAllTeamCalling = canAllTeamCalling;

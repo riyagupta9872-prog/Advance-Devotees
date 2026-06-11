@@ -1927,16 +1927,11 @@ function downloadSkipReport() {
 // New devotees (created this month) get a yellow highlight on their name cell.
 // Columns: Sno | Name | Mobile | Calling By | [CS | AT per session] | Total AT
 const _MONTHLY_TEAM_PALETTES = {
-  'Champaklata': ['C8E6C9','A5D6A7','81C784','66BB6A','4CAF50','388E3C'],
-  'Chitralekha': ['BBDEFB','90CAF9','64B5F6','42A5F5','1E88E5','1565C0'],
-  'Indulekha':   ['E1BEE7','CE93D8','BA68C8','AB47BC','8E24AA','6A1B9A'],
-  'Lalita':      ['FFE0B2','FFCC80','FFB74D','FFA726','FB8C00','E65100'],
-  'Nilachal':    ['B2EBF2','80DEEA','4DD0E1','26C6DA','00ACC1','00838F'],
-  'Other':       ['F5F5F5','EEEEEE','E0E0E0','BDBDBD','9E9E9E','757575'],
-  'Rangadevi':   ['F8BBD0','F48FB1','F06292','EC407A','D81B60','AD1457'],
-  'Sudevi':      ['FFF9C4','FFF59D','FFF176','FFEE58','FDD835','F9A825'],
-  'Tungavidya':  ['FFCDD2','EF9A9A','E57373','EF5350','E53935','B71C1C'],
-  'Vishakha':    ['C5CAE9','9FA8DA','7986CB','5C6BC0','3949AB','283593'],
+  'ICF_Mtg':  ['C8E6C9','A5D6A7','81C784','66BB6A','4CAF50','388E3C'],
+  'ICF_Prji': ['BBDEFB','90CAF9','64B5F6','42A5F5','1E88E5','1565C0'],
+  'IGF':      ['E1BEE7','CE93D8','BA68C8','AB47BC','8E24AA','6A1B9A'],
+  'IYF':      ['FFE0B2','FFCC80','FFB74D','FFA726','FB8C00','E65100'],
+  'Other':    ['F5F5F5','EEEEEE','E0E0E0','BDBDBD','9E9E9E','757575'],
 };
 
 function _monthBounds(yearMonth) {

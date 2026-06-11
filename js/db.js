@@ -646,37 +646,6 @@ const DB = {
     return true;
   },
 
-  // On-demand team rename — updates all collections in one go.
-  async renameTeam(oldName, newName) {
-    if (!oldName || !newName || oldName === newName) throw new Error('Invalid team names');
-    const BATCH = 400;
-    const collections = ['devotees','users','callingStatus','callingSubmissions',
-      'attendanceRecords','bookDistributions','services','registrations','donations'];
-    let totalUpdated = 0;
-    for (const col of collections) {
-      try {
-        const snap = await fdb.collection(col).where('teamName', '==', oldName).get();
-        for (let i = 0; i < snap.docs.length; i += BATCH) {
-          const batch = fdb.batch();
-          snap.docs.slice(i, i + BATCH).forEach(d => batch.update(d.ref, { teamName: newName }));
-          await batch.commit();
-          totalUpdated += Math.min(BATCH, snap.docs.length - i);
-        }
-      } catch (_) {}
-    }
-    try {
-      const tDoc = await fdb.collection('settings').doc('attendanceTargets').get();
-      if (tDoc.exists && tDoc.data().teams?.[oldName] !== undefined) {
-        const teams = { ...tDoc.data().teams };
-        teams[newName] = teams[oldName];
-        delete teams[oldName];
-        await fdb.collection('settings').doc('attendanceTargets').update({ teams });
-      }
-    } catch (_) {}
-    DevoteeCache.bust();
-    return totalUpdated;
-  },
-
   // When a coordinator renames themselves, propagate the new name to every
   // devotee whose callingBy field still holds the old name.
   async updateCallingByName(oldName, newName) {

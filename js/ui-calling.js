@@ -1811,15 +1811,26 @@ async function openReminderModal() {
   body.innerHTML = '<div class="loading"><i class="fas fa-spinner"></i> Loading…</div>';
   openModal('reminder-modal');
 
-  // Look up each user's saved mobile number from users/{uid}.mobile
+  // Look up each user's saved mobile number + gender from users/{uid}
   const mobileByName = {};
+  const genderByName = {};
   try {
     const usersSnap = await fdb.collection('users').get();
     usersSnap.docs.forEach(d => {
       const u = d.data();
       if (u.name && u.mobile) mobileByName[u.name] = u.mobile;
+      if (u.name && u.gender) genderByName[u.name] = u.gender;
     });
   } catch (_) {}
+
+  // Gender-based honorific: Male → Prabhuji, Female → Mataji,
+  // unknown → generic "ji" so we never address someone incorrectly.
+  const honorific = name => {
+    const g = (genderByName[name] || '').toLowerCase();
+    if (g === 'male') return 'Prabhuji';
+    if (g === 'female') return 'Mataji';
+    return 'ji';
+  };
 
   const waBtn = (digits, message) => digits.length >= 10
     ? `<a class="btn btn-primary" style="padding:.3rem .7rem;font-size:.78rem;background:#25D366;border-color:#25D366" href="https://wa.me/91${digits.slice(-10)}?text=${encodeURIComponent(message)}" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i> Remind</a>`
@@ -1829,7 +1840,7 @@ async function openReminderModal() {
   const pendingCoordinators = pending.filter(r => r.isAdmin);
   const coordRowsHtml = pendingCoordinators.map(r => {
     const digits = (mobileByName[r.name] || '').replace(/\D/g, '');
-    const message = `Hare Krishna ${r.name} mataji 🙏\n\nAapne abhi tak ${weekLabel} ke calling ka status submit nahi kiya hai. Kripya jaldi se jaldi sabhi devotees ko call karke status bharein aur calling submit karein.\n\nDhanyawad! 🙏`;
+    const message = `Hare Krishna ${r.name} ${honorific(r.name)} 🙏\n\nAapne abhi tak ${weekLabel} ke calling ka status submit nahi kiya hai. Kripya jaldi se jaldi sabhi devotees ko call karke status bharein aur calling submit karein.\n\nDhanyawad! 🙏`;
     return `<div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.5rem .25rem;border-bottom:1px solid #e2e8f0">
       <div>
         <div style="font-weight:600;font-size:.88rem">${r.name}</div>
@@ -1848,9 +1859,9 @@ async function openReminderModal() {
     const adminRow = _lateReportRows.find(r => r.team === team && r.isAdmin);
     const adminName = adminRow ? adminRow.name : '';
     const digits = (mobileByName[adminName] || '').replace(/\D/g, '');
-    const list = names.map(n => `- ${n} mataji`).join('\n');
+    const list = names.map(n => `- ${n} ${honorific(n)}`).join('\n');
     const message = adminName
-      ? `Hare Krishna ${adminName} mataji 🙏\n\nAapki ${team} team ke in facilitator(s) ne abhi tak ${weekLabel} ke calling ka status submit nahi kiya hai:\n${list}\n\nKripya inse contact karke pata karein ki kya wajah hai, aur jaldi se jaldi calling status submit karwayein. Apni team se yeh kaam karwana coordinator ki responsibility hai.\n\nDhanyawad! 🙏`
+      ? `Hare Krishna ${adminName} ${honorific(adminName)} 🙏\n\nAapki ${team} team ke in facilitator(s) ne abhi tak ${weekLabel} ke calling ka status submit nahi kiya hai:\n${list}\n\nKripya inse contact karke pata karein ki kya wajah hai, aur jaldi se jaldi calling status submit karwayein. Apni team se yeh kaam karwana coordinator ki responsibility hai.\n\nDhanyawad! 🙏`
       : '';
     return `<div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.5rem .25rem;border-bottom:1px solid #e2e8f0">
       <div>
