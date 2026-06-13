@@ -327,6 +327,14 @@ const DB = {
     await fdb.collection('sessions').doc(sessionId).update({ topic: topic || '', isCancelled: !!isCancelled, updatedAt: TS() });
   },
 
+  // Hard-delete a session doc — only for accidental duplicates (e.g. the same
+  // Sunday created twice). Refuses if any attendance was marked against it.
+  async deleteSession(sessionId) {
+    const attSnap = await fdb.collection('attendanceRecords').where('sessionId', '==', sessionId).limit(1).get();
+    if (!attSnap.empty) throw new Error('This session has attendance records — cannot delete.');
+    await fdb.collection('sessions').doc(sessionId).delete();
+  },
+
   async getSessionsWithPresent() {
     const sessions = await this.getSessions();
     const counts = await Promise.all(
@@ -405,7 +413,7 @@ const DB = {
     return { sessions, devotees, attMap, attTimeMap, csMap };
   },
 
-  async getSessionStats(sessionId) {
+  async getSessionStats(sessionId, team = '') {
     // sessionId may be the Firestore doc ID OR the date string (YYYY-MM-DD).
     // Try doc lookup first; if missing, fall back to a date query.
     const [sessSnap, cfgSnap] = await Promise.all([
@@ -442,17 +450,26 @@ const DB = {
     const submittedCallers = new Set(submSnap.docs.map(d => d.data().userName).filter(Boolean));
     const devCallerMap = {};
     allDevotees.forEach(d => { if (d.callingBy) devCallerMap[d.id] = d.callingBy; });
-    const confirmed = cs.docs.filter(d => {
+    // Scope to a single team's devotees when requested (e.g. team-locked coordinators).
+    const teamIdSet = team ? new Set(allDevotees.filter(d => d.teamName === team).map(d => d.id)) : null;
+    const inTeam = devoteeId => !teamIdSet || teamIdSet.has(devoteeId);
+    const confirmedDocs = cs.docs.filter(d => {
       if (d.data().comingStatus !== 'Yes') return false;
+      if (!inTeam(d.data().devoteeId)) return false;
       const caller = devCallerMap[d.data().devoteeId];
       return !caller || submittedCallers.has(caller);
-    }).length;
+    });
+    const confirmedIds = confirmedDocs.map(d => d.data().devoteeId);
+    const confirmed = confirmedIds.length;
     // "New" = attendance records explicitly marked isNewDevotee
-    const newPresentSet = new Set(at.docs.filter(d => d.data().isNewDevotee).map(d => d.data().devoteeId));
-    const newDevotees = newPresentSet.size;
-    const present     = at.size - newDevotees;   // regular attendees only
-    const totalPresent = at.size;                // present + new = all who attended
-    return { confirmed, present, newDevotees, totalPresent };
+    const atInTeam = at.docs.filter(d => inTeam(d.data().devoteeId));
+    const newIds = atInTeam.filter(d => d.data().isNewDevotee).map(d => d.data().devoteeId);
+    const newDevotees = newIds.length;
+    const presentIds = atInTeam.filter(d => !d.data().isNewDevotee).map(d => d.data().devoteeId);
+    const present     = presentIds.length;        // regular attendees only
+    const totalPresentIds = atInTeam.map(d => d.data().devoteeId);
+    const totalPresent = totalPresentIds.length;   // present + new = all who attended
+    return { confirmed, present, newDevotees, totalPresent, confirmedIds, presentIds, newIds, totalPresentIds };
   },
 
   /* ATTENDANCE */

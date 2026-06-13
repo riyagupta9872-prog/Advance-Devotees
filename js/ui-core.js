@@ -888,6 +888,14 @@ async function loadSessionManagementList() {
         : `<span style="color:var(--text-muted);font-size:.8rem">—</span>`;
       const topicStr   = (s.topic || '').replace(/'/g, "\\'");
       const cancelVal  = s.is_cancelled ? 'true' : 'false';
+      // Delete is only safe when no attendance has been marked for this
+      // session — e.g. an accidental duplicate Sunday with present === 0.
+      const deleteBtn = s.present === 0
+        ? `<button class="btn-icon smgr-delete-btn" title="Delete (empty session)" style="color:var(--danger)"
+            onclick="doDeleteSession('${s.id}','${dateLabel.replace(/'/g, "\\'")}')">
+            <i class="fas fa-trash-alt"></i>
+          </button>`
+        : '';
       return `<tr>
         <td class="smgr-date">${dateLabel}${cancelBadge}</td>
         <td class="smgr-topic">${topicHtml}</td>
@@ -897,6 +905,7 @@ async function loadSessionManagementList() {
             onclick="openEditSessionModal('${s.id}','${s.session_date}','${topicStr}',${cancelVal})">
             <i class="fas fa-pencil-alt"></i>
           </button>
+          ${deleteBtn}
         </td>
       </tr>`;
     }).join('');
@@ -904,6 +913,19 @@ async function loadSessionManagementList() {
     body.innerHTML = `<tr><td colspan="4" class="empty-cell">Error: ${e.message}</td></tr>`;
   }
 }
+
+async function doDeleteSession(sessionId, dateLabel) {
+  if (!confirm(`Delete the session "${dateLabel}"?\n\nThis is permanent — only do this for an accidental duplicate with no attendance marked.`)) return;
+  try {
+    await DB.deleteSession(sessionId);
+    showToast('Session deleted', 'success');
+    delete AppState.sessionsCache[sessionId];
+    await loadSessionManagementList();
+  } catch (e) {
+    showToast('Delete failed: ' + (e.message || 'Unknown'), 'error');
+  }
+}
+window.doDeleteSession = doDeleteSession;
 
 function openEditSessionModal(sessionId, sessionDate, topic, isCancelled) {
   document.getElementById('esm-session-id').value   = sessionId;

@@ -1,7 +1,7 @@
 /* ══ SERVICE WORKER – Advance Devotees ══ */
 // Bump this version string every time you deploy new code.
 // This tells the browser to throw away old cached files and install fresh ones.
-const CACHE = 'advance-devotees-v11';
+const CACHE = 'advance-devotees-v14';
 const SHELL = [
   './index.html',
   './js/config.js',

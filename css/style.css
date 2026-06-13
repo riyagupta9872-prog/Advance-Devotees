@@ -2024,6 +2024,8 @@ button.contact-icon { border: none; padding: 0; }
 }
 .sh-stat-num { font-weight: 700; font-size: 1.1rem; line-height: 1.2; }
 .sh-stat-lbl { color: var(--text-muted); font-size: .62rem; margin-top: .1rem; white-space: nowrap; }
+.sh-stat-clickable { cursor: pointer; transition: transform .1s, box-shadow .15s; }
+.sh-stat-clickable:hover { box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 @media (max-width: 720px) {
   .sh-stat-num { font-size: .95rem; }
   .sh-stat-lbl { font-size: .58rem; }
@@ -3451,6 +3453,7 @@ thead .sh-freeze { z-index: 7; }
   background: #fff; border-radius: var(--radius);
   padding: 1.25rem; box-shadow: var(--shadow-sm);
   border: 1px solid var(--border);
+  position: relative; height: 360px; max-height: 60vh;
 }
 
 .leaderboard-rank { font-family: 'Cinzel', serif; font-weight: 700; font-size: .98rem; min-width: 52px; width: 52px; }
@@ -5167,18 +5170,20 @@ button.fab:hover { transform: scale(1.1) rotate(90deg); box-shadow: 0 8px 28px r
 .smgr-topic   { color: var(--text); }
 .smgr-cnt-th  { text-align: center; width: 80px; }
 .smgr-cnt     { text-align: center; }
-.smgr-act     { text-align: center; width: 48px; }
+.smgr-act     { text-align: center; width: 80px; }
+.smgr-act > .btn-icon, .smgr-act > button { margin: 0 .15rem; }
 .smgr-present {
   display: inline-block; background: var(--brand-subtle);
   color: var(--brand); font-weight: 700; font-size: .85rem;
   padding: .15rem .55rem; border-radius: 20px; min-width: 32px; text-align: center;
 }
-.smgr-edit-btn {
+.smgr-edit-btn, .smgr-delete-btn {
   background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
   color: var(--text-muted); padding: .25rem .4rem; cursor: pointer; font-size: .8rem;
   transition: border-color .15s, color .15s;
 }
 .smgr-edit-btn:hover { border-color: var(--brand); color: var(--brand); }
+.smgr-delete-btn:hover { border-color: var(--color-danger); color: var(--color-danger); }
 
 .drawer-label {
   font-weight: 600;

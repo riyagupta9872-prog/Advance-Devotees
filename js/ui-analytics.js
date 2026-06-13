@@ -639,6 +639,7 @@ async function loadTrends() {
       data: { labels, datasets: [{ label: 'Devotees Present', data: data.map(d => d.count), borderColor: '#2d7a52', backgroundColor: 'rgba(82,183,136,0.15)', borderWidth: 2.5, pointBackgroundColor: '#2d7a52', pointRadius: 5, fill: true, tension: 0.4 }] },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: {
           legend: { labels: { color: '#1b4332', font: { family: 'Nunito', size: 13 } } },
           tooltip: { backgroundColor: '#1e40af', titleFont: { family: 'Cinzel' }, bodyFont: { family: 'Nunito' } }
@@ -1667,7 +1668,7 @@ async function loadYearlySheet() {
     const [sheetData, stats] = await Promise.all([
       DB.getSheetData(start, end),
       AppState.currentSessionId
-        ? DB.getSessionStats(AppState.currentSessionId).catch(() => null)
+        ? DB.getSessionStats(AppState.currentSessionId, teamFilter).catch(() => null)
         : Promise.resolve(null)
     ]);
     const { sessions, devotees, attMap, attTimeMap, csMap } = sheetData;
@@ -1675,21 +1676,22 @@ async function loadYearlySheet() {
       wrap.innerHTML = `<div class="empty-state"><i class="fas fa-table"></i><p>No sessions in this ${r.period} for ${teamFilter || 'any team'}</p></div>`;
       return;
     }
+    AppState._yearlySheetStats = { stats, devotees };
     const statsBar = stats ? `
       <div class="sh-stats-bar">
-        <div class="sh-stat-pill" style="border-top:3px solid var(--brand)">
+        <div class="sh-stat-pill sh-stat-clickable" style="border-top:3px solid var(--brand)" onclick="openYearlySheetStat('confirmed')">
           <span class="sh-stat-num" style="color:var(--brand)">${stats.confirmed}</span>
           <span class="sh-stat-lbl">Confirmed</span>
         </div>
-        <div class="sh-stat-pill" style="border-top:3px solid var(--success)">
+        <div class="sh-stat-pill sh-stat-clickable" style="border-top:3px solid var(--success)" onclick="openYearlySheetStat('present')">
           <span class="sh-stat-num" style="color:var(--success)">${stats.present}</span>
           <span class="sh-stat-lbl">Present</span>
         </div>
-        <div class="sh-stat-pill" style="border-top:3px solid var(--gold)">
+        <div class="sh-stat-pill sh-stat-clickable" style="border-top:3px solid var(--gold)" onclick="openYearlySheetStat('new')">
           <span class="sh-stat-num" style="color:var(--gold)">${stats.newDevotees}</span>
           <span class="sh-stat-lbl">New</span>
         </div>
-        <div class="sh-stat-pill" style="border-top:3px solid #6366f1">
+        <div class="sh-stat-pill sh-stat-clickable" style="border-top:3px solid #6366f1" onclick="openYearlySheetStat('total')">
           <span class="sh-stat-num" style="color:#6366f1">${stats.totalPresent}</span>
           <span class="sh-stat-lbl">Total Present</span>
         </div>
@@ -1700,6 +1702,37 @@ async function loadYearlySheet() {
     wrap.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Failed to load</p></div>';
   }
 }
+
+// Click handler for the Yearly Sheet stat pills — opens the existing
+// care-detail modal with the devotees behind that count (team-scoped already
+// via DB.getSessionStats(sessionId, teamFilter)).
+function openYearlySheetStat(kind) {
+  const data = AppState._yearlySheetStats;
+  if (!data || !data.stats) return;
+  const { stats, devotees } = data;
+  let ids = [], title = '';
+  if      (kind === 'confirmed') { ids = stats.confirmedIds;   title = 'Confirmed Coming'; }
+  else if (kind === 'present')   { ids = stats.presentIds;     title = 'Present'; }
+  else if (kind === 'new')       { ids = stats.newIds;         title = 'New Devotees'; }
+  else if (kind === 'total')     { ids = stats.totalPresentIds; title = 'Total Present'; }
+  const list = ids.map(id => {
+    const d = devotees.find(x => x.id === id) || {};
+    return {
+      id, name: d.name || '—',
+      mobile: d.mobile || '',
+      team_name: d.teamName || '',
+      calling_by: d.callingBy || '',
+      reference_by: d.referenceBy || '',
+      chanting_rounds: d.chantingRounds || 0,
+    };
+  });
+  if (typeof _careCache !== 'undefined') {
+    _careCache._yearlySheet = { title, list };
+    _careCurrentType = '_yearlySheet';
+    if (typeof openCareDetail === 'function') openCareDetail('_yearlySheet');
+  }
+}
+window.openYearlySheetStat = openYearlySheetStat;
 
 async function loadAttAccuracyReport() {
   const el = document.getElementById('att-accuracy-content');
